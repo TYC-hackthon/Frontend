@@ -13,9 +13,15 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      component: Index,
-    },
-  ],
+      component: () => import ('@/plugins/framework.vue'),
+      children: [
+        {
+          path: '',
+          component: Index
+        },
+      ]
+    }
+  ]
 })
 
 export default router

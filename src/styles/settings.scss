@@ -1,10 +1,110 @@
-/**
- * src/styles/settings.scss
- *
- * Configures SASS variables and Vuetify overwrites
- */
 
-// https://vuetifyjs.com/features/sass-variables/`
-// @use 'vuetify/settings' with (
-//   $color-pack: false
-// );
+:root {
+  /* Brand palette (Nunito + Inter) */
+  /* Single, consistent cream background */
+  --color-bg: #FAF7EF;             /* warm off-white */
+  --color-bg-2: #FAF7EF;           /* keep for compatibility, same as bg */
+  --color-surface: #FFFFFF;        /* clean card */
+  --color-primary: #AAAA00;        /* deep green */
+  --color-primary-600: #AAAA00;    /* hover green */
+  --color-secondary: #00AAAA;      /* light green accent */
+  --color-accent: #CFE7B0;         /* pale green */
+  --color-text: #0E3E34;           /* ink green */
+  --color-muted: #6A7C76;          /* muted neutral */
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --nav-blur: 16px;
+  --shadow-sm: 0 6px 16px rgba(0,0,0,.08);
+  --shadow-md: 0 10px 24px rgba(0,0,0,.12);
+}
+/* 
+.v-icon {
+  display: inline-block;
+  font: normal normal normal 24px/1 "Material Design Icons";
+  font-size: inherit;
+  text-rendering: auto;
+  line-height: inherit;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+} */
+
+/* Smooth anchor navigation and header offset */
+html { scroll-behavior: smooth; }
+/* Keep section anchors visible below the sticky app bar */
+[id] { scroll-margin-top: 96px; }
+
+/* Links */
+a { color: var(--color-primary); text-decoration: none; }
+a:hover { color: var(--color-primary-600); }
+
+/* Glassy surfaces */
+.glass {
+  background: rgba(255,255,255,0.3);
+  backdrop-filter: blur(var(--nav-blur));
+  -webkit-backdrop-filter: blur(var(--nav-blur));
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.glass-card {
+  background: rgba(255,255,255,0.86);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Elevation helpers */
+.elevate:hover { box-shadow: var(--shadow-md); }
+
+/* Materialize spinner – align with primary */
+/* .spinner-layer,
+.spinner-blue,
+.spinner-red,
+.spinner-yellow,
+.spinner-green { border-color: var(--color-primary) !important; } */
+
+/* Vuetify adjustments */
+.v-card { border-radius: var(--radius);}
+.v-card--variant-elevated { box-shadow: var(--shadow-sm); }
+.v-btn { border-radius: 999px; font-weight: 700; }
+.v-application { background: transparent !important; }
+
+/* Utility */
+.text-muted { color: var(--color-muted) !important; }
+.text-primary { color: var(--color-primary) !important; }
+.text-accent { color: var(--color-secondary) !important; }
+.text-secondary { color: var(--color-secondary) !important; }
+.bg-surface { background-color: var(--color-surface) !important; }
+
+/* Title stroke for readability on imagery */
+.stroke {
+  text-shadow: -1px -1px 0 #fff,
+               1px -1px 0 #fff,
+              -1px  1px 0 #fff,
+               1px  1px 0 #fff;
+}
+
+/* Hiding the scroll bar */
+html {
+    overflow: -moz-hidden-unscrollable;
+}
+
+body::-webkit-scrollbar {
+    display: none;
+}
+
+/* Smooth page transitions */
+.fade-enter-active, .fade-leave-active { transition: opacity .6s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* Soft divider */
+.soft-divider { height: 1px; width: 100%; background: rgba(0,0,0,0.08); border: none; margin: 16px 0; border-radius: 1px; }
+
+/* Spacing helpers */
+.section { padding-top: 48px; padding-bottom: 48px; }
+.spacious { padding: 24px; }
+.spacious-lg { padding: 32px; }
