@@ -125,9 +125,10 @@
           :style="graphGridStyle(item)"
         >
           <span
-            v-if="item.forkLanes.length > 0"
+            v-for="forkLane in forkLanesForPaint(item)"
+            :key="forkLane"
             class="branch-node__fork"
-            :style="forkLineStyle(item)"
+            :style="forkLineStyle(item, forkLane)"
           />
           <span
             v-for="lane in item.graphLanes"
@@ -215,11 +216,18 @@
     width: `calc(${item.graphColumnCount} * var(--graph-lane-width))`,
   })
 
-  const forkLineStyle = (item: FlattenedNode) => {
-    const firstLane = Math.min(item.lane, ...item.forkLanes)
-    const lastLane = Math.max(item.lane, ...item.forkLanes)
+  const forkLanesForPaint = (item: FlattenedNode) =>
+    [...item.forkLanes].sort((left, right) =>
+      Math.abs(right - item.lane) - Math.abs(left - item.lane)
+    )
+
+  const forkLineStyle = (item: FlattenedNode, forkLane: number) => {
+    const firstLane = Math.min(item.lane, forkLane)
+    const lastLane = Math.max(item.lane, forkLane)
+    const targetLane = item.graphLanes.find(lane => lane.index === forkLane)
 
     return {
+      background: targetLane?.color ?? item.branchColor,
       left: `calc((${firstLane} * var(--graph-lane-width)) + (var(--graph-lane-width) / 2))`,
       width: `calc(${lastLane - firstLane} * var(--graph-lane-width))`,
     }
@@ -535,7 +543,6 @@
 
   .branch-node:hover:not(:disabled) .branch-node__fork,
   .branch-node--active .branch-node__fork {
-    background: var(--node-accent);
     opacity: 1;
   }
 
