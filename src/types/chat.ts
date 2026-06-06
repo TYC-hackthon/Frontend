@@ -65,7 +65,30 @@ export type ApiResponse<T> = {
   error?: string
 }
 
+export type RootTreeOption = {
+  id: number
+  isCurrent: boolean
+  label: string
+  preview: string
+}
+
+export type GraphLane = {
+  color: string
+  index: number
+  isForkTarget: boolean
+  isNode: boolean
+  isThrough: boolean
+}
+
 export type FlattenedNode = {
+  branchColor: string
+  branchRingColor: string
   node: MessageNode
   depth: number
+  forkLanes: number[]
+  graphColumnCount: number
+  graphLanes: GraphLane[]
+  hasChildren: boolean
+  lane: number
+  parentLane: number | null
 }

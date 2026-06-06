@@ -63,8 +63,45 @@
       </div>
     </div>
 
+    <div
+      v-if="treeRootOptions.length > 0 || isNewRootDraftActive"
+      aria-label="Root trees"
+      class="root-switcher"
+      role="tablist"
+    >
+      <button
+        aria-label="New root"
+        :aria-selected="isNewRootDraftActive"
+        class="root-switcher__button root-switcher__button--new"
+        :class="{ 'root-switcher__button--active': isNewRootDraftActive }"
+        :disabled="isLoadingContext"
+        role="tab"
+        type="button"
+        @click="emit('startRoot')"
+      >
+        <v-icon icon="mdi-plus" size="15" />
+        <span>New</span>
+      </button>
+
+      <button
+        v-for="option in treeRootOptions"
+        :key="option.id"
+        :aria-label="`Open ${option.label}`"
+        :aria-selected="option.isCurrent"
+        class="root-switcher__button"
+        :class="{ 'root-switcher__button--active': option.isCurrent }"
+        :disabled="isLoadingContext"
+        role="tab"
+        type="button"
+        @click="emit('selectRootTree', option.id)"
+      >
+        <span class="root-switcher__label">{{ option.label }}</span>
+        <span class="root-switcher__preview">{{ option.preview }}</span>
+      </button>
+    </div>
+
     <div class="branch-tree" :class="{ 'branch-tree--loading': isLoadingTree }">
-      <p v-if="treeNodes.length === 0" class="empty-tree">
+      <p v-if="flattenedTreeNodes.length === 0" class="empty-tree">
         No saved nodes
       </p>
 
@@ -78,11 +115,30 @@
           'branch-node--exchange': item.node.role === 'exchange',
         }"
         :disabled="isLoadingContext"
-        :style="{ '--node-depth': item.depth }"
+        :style="branchNodeStyle(item)"
         type="button"
         @click="emit('selectNode', item.node.id)"
       >
-        <span class="branch-node__rail" />
+        <span
+          aria-hidden="true"
+          class="branch-node__graph"
+          :style="graphGridStyle(item)"
+        >
+          <span
+            v-if="item.forkLanes.length > 0"
+            class="branch-node__fork"
+            :style="forkLineStyle(item)"
+          />
+          <span
+            v-for="lane in item.graphLanes"
+            :key="lane.index"
+            class="branch-graph__lane"
+            :class="graphLaneClasses(lane, item)"
+            :style="graphLaneStyle(lane)"
+          >
+            <span v-if="lane.isNode" class="branch-graph__dot" />
+          </span>
+        </span>
         <span class="branch-node__content">
           <span class="branch-node__meta">
             <v-icon :icon="nodeIcon(item.node)" size="16" />
@@ -92,7 +148,7 @@
           <span class="branch-node__preview">{{ nodePreview(item.node) }}</span>
         </span>
         <v-icon
-          v-if="item.node.children.length > 0"
+          v-if="item.hasChildren"
           class="branch-node__children"
           icon="mdi-source-branch"
           size="16"
@@ -103,7 +159,7 @@
 </template>
 
 <script setup lang="ts">
-  import type { FlattenedNode, MessageNode } from '@/types/chat'
+  import type { FlattenedNode, GraphLane, MessageNode, RootTreeOption } from '@/types/chat'
 
   defineProps<{
     currentNodeId: number | null
@@ -112,6 +168,8 @@
     isClearingDatabase: boolean
     isLoadingContext: boolean
     isLoadingTree: boolean
+    isNewRootDraftActive: boolean
+    treeRootOptions: RootTreeOption[]
     treeNodes: MessageNode[]
     treeRoots: number[]
   }>()
@@ -120,6 +178,7 @@
     clearRequested: []
     refreshTree: []
     selectNode: [nodeId: number]
+    selectRootTree: [rootId: number]
     startRoot: []
   }>()
 
@@ -137,6 +196,39 @@
     if (node.role === 'exchange') return 'mdi-swap-horizontal'
     return node.role === 'user' ? 'mdi-account' : 'mdi-robot'
   }
+
+  const branchNodeStyle = (item: FlattenedNode) => ({
+    '--node-active-bg': item.branchRingColor,
+    '--node-accent': item.branchColor,
+    '--node-active-ring': item.branchRingColor,
+  })
+
+  const graphGridStyle = (item: FlattenedNode) => ({
+    gridTemplateColumns: `repeat(${item.graphColumnCount}, var(--graph-lane-width))`,
+    width: `calc(${item.graphColumnCount} * var(--graph-lane-width))`,
+  })
+
+  const forkLineStyle = (item: FlattenedNode) => {
+    const firstLane = Math.min(item.lane, ...item.forkLanes)
+    const lastLane = Math.max(item.lane, ...item.forkLanes)
+
+    return {
+      left: `calc((${firstLane} * var(--graph-lane-width)) + (var(--graph-lane-width) / 2))`,
+      width: `calc(${lastLane - firstLane} * var(--graph-lane-width))`,
+    }
+  }
+
+  const graphLaneClasses = (lane: GraphLane, item: FlattenedNode) => ({
+    'branch-graph__lane--fork-target': lane.isForkTarget,
+    'branch-graph__lane--leaf': lane.isNode && !item.hasChildren,
+    'branch-graph__lane--node': lane.isNode,
+    'branch-graph__lane--root': lane.isNode && item.parentLane === null,
+    'branch-graph__lane--through': lane.isThrough,
+  })
+
+  const graphLaneStyle = (lane: GraphLane) => ({
+    '--lane-color': lane.color,
+  })
 </script>
 
 <style scoped>
@@ -268,15 +360,78 @@
     text-transform: uppercase;
   }
 
+  .root-switcher {
+    align-items: stretch;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 4px;
+  }
+
+  .root-switcher__button {
+    align-items: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--text-subtle);
+    cursor: pointer;
+    display: grid;
+    flex: 0 0 auto;
+    gap: 2px;
+    min-height: 42px;
+    min-width: 82px;
+    padding: 6px 9px;
+    text-align: left;
+  }
+
+  .root-switcher__button--new {
+    align-content: center;
+    grid-auto-flow: column;
+    justify-content: center;
+    min-width: 70px;
+  }
+
+  .root-switcher__button:disabled {
+    cursor: progress;
+  }
+
+  .root-switcher__button:hover:not(:disabled),
+  .root-switcher__button--active {
+    background: rgba(45, 212, 191, 0.12);
+    border-color: rgba(45, 212, 191, 0.38);
+    color: var(--text-strong);
+  }
+
+  .root-switcher__label {
+    color: inherit;
+    font-size: 0.74rem;
+    font-weight: 900;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .root-switcher__preview {
+    color: var(--text-subtle);
+    font-size: 0.72rem;
+    line-height: 1.2;
+    max-width: 112px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .branch-tree {
     align-content: start;
     display: grid;
     flex: 1;
-    gap: 8px;
+    gap: 0;
     height: 100%;
     max-height: 100%;
     min-height: 0;
-    overflow-x: hidden;
+    overflow-x: auto;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding-right: 2px;
@@ -296,21 +451,25 @@
   }
 
   .branch-node {
-    --node-depth: 0;
+    --graph-lane-width: 18px;
+    --graph-line: rgba(148, 163, 184, 0.42);
+    --node-active-bg: rgba(20, 184, 166, 0.16);
+    --node-active-ring: rgba(20, 184, 166, 0.28);
+    --node-accent: var(--primary);
     align-items: center;
-    background: var(--field-bg);
-    border: 1px solid var(--border-soft);
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 8px;
     color: var(--text-strong);
     cursor: pointer;
     display: grid;
-    gap: 8px;
-    grid-template-columns: 4px minmax(0, 1fr) auto;
-    margin-left: calc(var(--node-depth) * 14px);
-    min-height: 58px;
-    padding: 9px 10px;
+    gap: 10px;
+    grid-template-columns: auto minmax(0, 1fr) 18px;
+    min-height: 54px;
+    min-width: 260px;
+    padding: 0 8px 0 2px;
     text-align: left;
-    width: calc(100% - (var(--node-depth) * 14px));
+    width: 100%;
   }
 
   .branch-node:disabled {
@@ -319,34 +478,15 @@
 
   .branch-node:hover:not(:disabled),
   .branch-node--active {
-    background: var(--primary-node-bg);
-    border-color: var(--primary);
+    background: var(--node-active-bg);
+    border-color: var(--node-accent);
   }
 
-  .branch-node--assistant:hover:not(:disabled),
-  .branch-node--assistant.branch-node--active {
-    background: var(--assistant-node-bg);
-    border-color: var(--assistant-accent);
-  }
-
-  .branch-node--exchange:hover:not(:disabled),
-  .branch-node--exchange.branch-node--active {
-    background: var(--exchange-node-bg);
-    border-color: var(--exchange-accent);
-  }
-
-  .branch-node__rail {
+  .branch-node__graph {
     align-self: stretch;
-    background: var(--primary);
-    border-radius: 999px;
-  }
-
-  .branch-node--assistant .branch-node__rail {
-    background: var(--assistant-accent);
-  }
-
-  .branch-node--exchange .branch-node__rail {
-    background: var(--exchange-accent);
+    display: grid;
+    min-height: 54px;
+    position: relative;
   }
 
   .branch-node__content {
@@ -373,6 +513,96 @@
 
   .branch-node__children {
     color: var(--text-subtle);
+  }
+
+  .branch-node__fork {
+    background: var(--node-accent);
+    border-radius: 999px;
+    height: 2px;
+    opacity: 0.78;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 0;
+  }
+
+  .branch-node:hover:not(:disabled) .branch-node__fork,
+  .branch-node--active .branch-node__fork {
+    background: var(--node-accent);
+    opacity: 1;
+  }
+
+  .branch-graph__lane {
+    --lane-color: var(--graph-line);
+    min-width: var(--graph-lane-width);
+    position: relative;
+    z-index: 1;
+  }
+
+  .branch-graph__lane::before {
+    background: var(--graph-line);
+    border-radius: 999px;
+    bottom: 0;
+    content: "";
+    display: none;
+    left: 50%;
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    width: 2px;
+  }
+
+  .branch-graph__lane--through::before {
+    background: var(--lane-color);
+    display: block;
+    opacity: 0.74;
+  }
+
+  .branch-graph__lane--fork-target::before {
+    background: var(--lane-color);
+    bottom: 0;
+    display: block;
+    opacity: 0.82;
+    top: 50%;
+  }
+
+  .branch-graph__lane--node::before {
+    background: var(--lane-color);
+    bottom: 0;
+    display: block;
+    top: 0;
+  }
+
+  .branch-graph__lane--node.branch-graph__lane--root::before {
+    top: 50%;
+  }
+
+  .branch-graph__lane--node.branch-graph__lane--leaf::before {
+    bottom: 50%;
+  }
+
+  .branch-graph__lane--node.branch-graph__lane--leaf.branch-graph__lane--root::before {
+    display: none;
+  }
+
+  .branch-graph__dot {
+    background: var(--surface);
+    border: 3px solid var(--node-accent);
+    border-radius: 999px;
+    box-shadow: 0 0 0 3px var(--surface);
+    height: 13px;
+    left: 50%;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 13px;
+    z-index: 2;
+  }
+
+  .branch-node:hover:not(:disabled) .branch-graph__dot,
+  .branch-node--active .branch-graph__dot {
+    background: var(--node-accent);
+    box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--node-active-ring);
   }
 
   @media (max-width: 1180px) {

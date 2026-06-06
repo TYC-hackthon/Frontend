@@ -36,11 +36,14 @@
         :is-clearing-database="isClearingDatabase"
         :is-loading-context="isLoadingContext"
         :is-loading-tree="isLoadingTree"
+        :is-new-root-draft-active="isNewRootDraftActive"
+        :tree-root-options="treeRootOptions"
         :tree-nodes="treeNodes"
         :tree-roots="treeRoots"
         @clear-requested="isClearDialogOpen = true"
         @refresh-tree="loadTree"
         @select-node="selectNode"
+        @select-root-tree="selectRootTree"
         @start-root="startRootConversation"
       />
 
@@ -68,6 +71,7 @@
     FlattenedNode,
     MessageNode,
     Provider,
+    RootTreeOption,
     TreePayload,
   } from '@/types/chat'
 
@@ -101,6 +105,8 @@
   const treeNodes = ref<MessageNode[]>([])
   const treeRoots = ref<number[]>([])
   const currentNodeId = ref<number | null>(null)
+  const activeTreeRootId = ref<number | null>(null)
+  const isNewRootDraftActive = ref(false)
   const isSending = ref(false)
   const isDetectingModels = ref(false)
   const isLoadingTree = ref(false)
@@ -130,9 +136,47 @@
 
   const nodeById = computed(() => new Map(treeNodes.value.map(node => [node.id, node])))
 
+  const rootIdForNode = (nodeId: number | null) => {
+    if (nodeId === null) return null
+
+    let currentId: number | null = nodeId
+    const visited = new Set<number>()
+
+    while (currentId !== null && !visited.has(currentId)) {
+      visited.add(currentId)
+      const node = nodeById.value.get(currentId)
+      if (!node) return null
+      if (node.parent_id === null) return node.id
+      currentId = node.parent_id
+    }
+
+    return null
+  }
+
   const currentNode = computed(() =>
     currentNodeId.value === null ? null : nodeById.value.get(currentNodeId.value) ?? null
   )
+
+  const visibleTreeRootId = computed(() => {
+    if (
+      isNewRootDraftActive.value &&
+      activeTreeRootId.value === null &&
+      currentNodeId.value === null
+    ) {
+      return null
+    }
+
+    if (activeTreeRootId.value !== null && treeRoots.value.includes(activeTreeRootId.value)) {
+      return activeTreeRootId.value
+    }
+
+    const currentRootId = rootIdForNode(currentNodeId.value)
+    if (currentRootId !== null && treeRoots.value.includes(currentRootId)) {
+      return currentRootId
+    }
+
+    return treeRoots.value[0] ?? null
+  })
 
   const currentNodeLabel = computed(() => {
     if (!currentNode.value) return 'New root'
@@ -143,33 +187,162 @@
     currentNodeId.value === null ? 'Root context' : `Node #${currentNodeId.value}`
   )
 
-  const flattenedTreeNodes = computed<FlattenedNode[]>(() => {
-    const rows: FlattenedNode[] = []
-    const visited = new Set<number>()
+  const nodePreviewText = (node: MessageNode) => {
+    const compact = [node.user_content, node.assistant_content]
+      .filter(Boolean)
+      .join(' / ')
+      .trim() || node.content
+    const normalized = compact.replace(/\s+/g, ' ').trim()
+    if (!normalized) return `Node #${node.id}`
+    return normalized.length > 42 ? `${normalized.slice(0, 42)}...` : normalized
+  }
 
-    const visit = (nodeId: number, depth: number) => {
+  const treeRootOptions = computed<RootTreeOption[]>(() =>
+    treeRoots.value.flatMap((rootId, index) => {
+      const root = nodeById.value.get(rootId)
+      if (!root) return []
+
+      return [{
+        id: rootId,
+        isCurrent: visibleTreeRootId.value === rootId,
+        label: `Root ${index + 1}`,
+        preview: nodePreviewText(root),
+      }]
+    })
+  )
+
+  type BranchStyle = {
+    color: string
+    ringColor: string
+  }
+
+  const branchPalette: BranchStyle[] = [
+    { color: '#14b8a6', ringColor: 'rgba(20, 184, 166, 0.28)' },
+    { color: '#f97316', ringColor: 'rgba(249, 115, 22, 0.28)' },
+    { color: '#818cf8', ringColor: 'rgba(129, 140, 248, 0.28)' },
+    { color: '#22c55e', ringColor: 'rgba(34, 197, 94, 0.26)' },
+    { color: '#e879f9', ringColor: 'rgba(232, 121, 249, 0.28)' },
+    { color: '#38bdf8', ringColor: 'rgba(56, 189, 248, 0.28)' },
+    { color: '#facc15', ringColor: 'rgba(250, 204, 21, 0.24)' },
+    { color: '#fb7185', ringColor: 'rgba(251, 113, 133, 0.28)' },
+  ]
+
+  const flattenedTreeNodes = computed<FlattenedNode[]>(() => {
+    type RawGraphRow = Omit<FlattenedNode, 'graphColumnCount' | 'graphLanes'> & {
+      laneStyles: Map<number, BranchStyle>
+      openLanes: number[]
+    }
+
+    const rows: RawGraphRow[] = []
+    const visited = new Set<number>()
+    let maxLane = 0
+    let nextPaletteIndex = 0
+
+    if (visibleTreeRootId.value === null) return []
+
+    const nextBranchStyle = () => {
+      const style = branchPalette[nextPaletteIndex % branchPalette.length]
+      nextPaletteIndex += 1
+      return style
+    }
+
+    const nextAvailableLane = (usedLanes: Set<number>, afterLane: number) => {
+      let lane = afterLane + 1
+
+      while (usedLanes.has(lane)) {
+        lane += 1
+      }
+
+      usedLanes.add(lane)
+      return lane
+    }
+
+    const visit = (
+      nodeId: number,
+      depth: number,
+      lane: number,
+      branchStyle: BranchStyle,
+      openLanes: Map<number, BranchStyle>,
+      parentLane: number | null,
+    ) => {
       if (visited.has(nodeId)) return
 
       const node = nodeById.value.get(nodeId)
       if (!node) return
 
       visited.add(nodeId)
-      rows.push({ node, depth })
+      maxLane = Math.max(maxLane, lane, ...openLanes.keys())
 
-      for (const childId of node.children) {
-        visit(childId, depth + 1)
+      const childIds = node.children.filter(childId => nodeById.value.has(childId))
+      const usedLanes = new Set([...openLanes.keys(), lane])
+      const childLanes = childIds.map((_, index) =>
+        index === 0 ? lane : nextAvailableLane(usedLanes, lane)
+      )
+      const childBranchStyles = childLanes.map((_, index) =>
+        index === 0 ? branchStyle : nextBranchStyle()
+      )
+      const forkLanes = childLanes.slice(1)
+      const laneStyles = new Map(openLanes)
+
+      laneStyles.set(lane, branchStyle)
+      forkLanes.forEach((forkLane, index) => {
+        laneStyles.set(forkLane, childBranchStyles[index + 1])
+      })
+
+      maxLane = Math.max(maxLane, lane, ...childLanes, ...forkLanes)
+
+      rows.push({
+        branchColor: branchStyle.color,
+        branchRingColor: branchStyle.ringColor,
+        node,
+        depth,
+        forkLanes,
+        hasChildren: childIds.length > 0,
+        lane,
+        laneStyles,
+        openLanes: [...openLanes.keys()],
+        parentLane,
+      })
+
+      const pendingSiblingLanes = new Map(openLanes)
+      forkLanes.forEach((forkLane, index) => {
+        pendingSiblingLanes.set(forkLane, childBranchStyles[index + 1])
+      })
+
+      childIds.forEach((childId, index) => {
+        const childLane = childLanes[index]
+        const childOpenLanes = new Map(pendingSiblingLanes)
+        childOpenLanes.delete(childLane)
+
+        visit(childId, depth + 1, childLane, childBranchStyles[index], childOpenLanes, lane)
+        pendingSiblingLanes.delete(childLane)
+      })
+    }
+
+    visit(visibleTreeRootId.value, 0, 0, nextBranchStyle(), new Map(), null)
+
+    const graphColumnCount = maxLane + 1
+
+    return rows.map(({ laneStyles, openLanes, ...row }) => {
+      const openLaneSet = new Set(openLanes)
+      const forkLaneSet = new Set(row.forkLanes)
+
+      return {
+        ...row,
+        graphColumnCount,
+        graphLanes: Array.from({ length: graphColumnCount }, (_, index) => {
+          const laneStyle = laneStyles.get(index) ?? branchPalette[0]
+
+          return {
+            color: laneStyle.color,
+            index,
+            isForkTarget: forkLaneSet.has(index),
+            isNode: index === row.lane,
+            isThrough: openLaneSet.has(index),
+          }
+        }),
       }
-    }
-
-    for (const rootId of treeRoots.value) {
-      visit(rootId, 0)
-    }
-
-    for (const node of treeNodes.value) {
-      visit(node.id, 0)
-    }
-
-    return rows
+    })
   })
 
   const isReady = computed(() => Boolean(activeProvider.value?.configured))
@@ -206,6 +379,27 @@
     await conversationPanelRef.value?.scrollToBottom()
   }
 
+  const syncActiveTreeRoot = () => {
+    const currentRootId = rootIdForNode(currentNodeId.value)
+
+    if (currentRootId !== null && treeRoots.value.includes(currentRootId)) {
+      activeTreeRootId.value = currentRootId
+      isNewRootDraftActive.value = false
+      return
+    }
+
+    if (activeTreeRootId.value !== null && treeRoots.value.includes(activeTreeRootId.value)) {
+      return
+    }
+
+    if (isNewRootDraftActive.value) {
+      activeTreeRootId.value = null
+      return
+    }
+
+    activeTreeRootId.value = treeRoots.value[0] ?? null
+  }
+
   const loadModels = async () => {
     try {
       const response = await fetch('/api/models')
@@ -228,6 +422,8 @@
       if (currentNodeId.value !== null && !nodeById.value.has(currentNodeId.value)) {
         await startRootConversation()
       }
+
+      syncActiveTreeRoot()
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : 'Unable to load conversation tree.'
     } finally {
@@ -244,6 +440,8 @@
       const data = await assertOk<ContextPayload>(response, 'Unable to load node context.')
       messages.value = data.messages.map(messageFromContextMessage)
       currentNodeId.value = data.node_id
+      activeTreeRootId.value = rootIdForNode(data.node_id)
+      isNewRootDraftActive.value = false
       await scrollToBottom()
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : 'Unable to load node context.'
@@ -257,8 +455,21 @@
     await loadContext(nodeId)
   }
 
+  const selectRootTree = async (rootId: number) => {
+    if (isLoadingContext.value) return
+
+    activeTreeRootId.value = rootId
+    isNewRootDraftActive.value = false
+
+    if (rootId !== currentNodeId.value) {
+      await loadContext(rootId)
+    }
+  }
+
   const startRootConversation = async () => {
+    activeTreeRootId.value = null
     currentNodeId.value = null
+    isNewRootDraftActive.value = true
     messages.value = []
     draft.value = ''
     errorMessage.value = ''
@@ -276,7 +487,9 @@
       await assertOk<{ deleted: number }>(response, 'Unable to clear database.')
       treeNodes.value = []
       treeRoots.value = []
+      activeTreeRootId.value = null
       currentNodeId.value = null
+      isNewRootDraftActive.value = false
       messages.value = []
       draft.value = ''
       isClearDialogOpen.value = false
@@ -378,6 +591,9 @@
   onMounted(async () => {
     await loadModels()
     await loadTree()
+    if (currentNodeId.value === null && activeTreeRootId.value !== null) {
+      await loadContext(activeTreeRootId.value)
+    }
     await detectOllamaModels(true)
   })
 </script>
