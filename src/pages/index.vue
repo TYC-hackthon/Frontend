@@ -201,6 +201,7 @@
             :tree-root-options="treeRootOptions"
             :tree-nodes="treeNodes"
             :tree-roots="treeRoots"
+            @burst-graph="isFireworkOverlayOpen = true"
             @clear-requested="isClearDialogOpen = true"
             @refresh-tree="loadTree"
             @select-node="selectNode"
@@ -241,6 +242,12 @@
           @refresh="loadAdminUsers"
           @update-user="updateUser"
         />
+
+        <GitGraphFireworkOverlay
+          v-model="isFireworkOverlayOpen"
+          :flattened-tree-nodes="flattenedTreeNodes"
+          @select-node="selectNodeFromFirework"
+        />
       </section>
     </v-container>
   </Layout>
@@ -253,6 +260,7 @@
   import BranchPanel from '@/components/chat/BranchPanel.vue'
   import ClearDatabaseDialog from '@/components/chat/ClearDatabaseDialog.vue'
   import ConversationPanel from '@/components/chat/ConversationPanel.vue'
+  import GitGraphFireworkOverlay from '@/components/chat/GitGraphFireworkOverlay.vue'
   import ModelSettingsPanel from '@/components/chat/ModelSettingsPanel.vue'
   import Layout from '@/plugins/layout.vue'
   import type {
@@ -322,6 +330,7 @@
   const isClearingDatabase = ref(false)
   const isBranchPanelCollapsed = ref(false)
   const isClearDialogOpen = ref(false)
+  const isFireworkOverlayOpen = ref(false)
   const errorMessage = ref('')
   const conversationPanelRef = ref<InstanceType<typeof ConversationPanel> | null>(null)
   let nextLocalMessageId = 1
@@ -716,6 +725,11 @@
     if (rootId !== currentNodeId.value) {
       await loadContext(rootId)
     }
+  }
+
+  const selectNodeFromFirework = async (nodeId: number) => {
+    isFireworkOverlayOpen.value = false
+    await selectNode(nodeId)
   }
 
   const startRootConversation = async () => {

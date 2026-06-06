@@ -6,8 +6,22 @@
         <h2>{{ currentNodeLabel }}</h2>
       </div>
 
-      <div v-if="showHeaderActions" class="branch-tools">
-        <v-tooltip text="New root" location="bottom">
+      <div v-if="showHeaderActions || showFireworkAction" class="branch-tools">
+        <v-tooltip v-if="showFireworkAction" text="Fullscreen burst" location="bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              aria-label="Open fullscreen branch burst"
+              class="icon-action burst-action"
+              :disabled="flattenedTreeNodes.length === 0"
+              icon="mdi-firework"
+              variant="flat"
+              @click="emit('burstGraph')"
+            />
+          </template>
+        </v-tooltip>
+
+        <v-tooltip v-if="showHeaderActions" text="New root" location="bottom">
           <template #activator="{ props: tooltipProps }">
             <v-btn
               v-bind="tooltipProps"
@@ -20,7 +34,7 @@
           </template>
         </v-tooltip>
 
-        <v-tooltip text="Refresh tree" location="bottom">
+        <v-tooltip v-if="showHeaderActions" text="Refresh tree" location="bottom">
           <template #activator="{ props: tooltipProps }">
             <v-btn
               v-bind="tooltipProps"
@@ -35,7 +49,7 @@
           </template>
         </v-tooltip>
 
-        <v-tooltip text="Clear history" location="bottom">
+        <v-tooltip v-if="showHeaderActions" text="Clear history" location="bottom">
           <template #activator="{ props: tooltipProps }">
             <v-btn
               v-bind="tooltipProps"
@@ -170,6 +184,7 @@
     isLoadingContext: boolean
     isLoadingTree: boolean
     isNewRootDraftActive: boolean
+    showFireworkAction?: boolean
     showHeaderActions?: boolean
     showRootSwitcher?: boolean
     showSummary?: boolean
@@ -177,12 +192,14 @@
     treeNodes: MessageNode[]
     treeRoots: number[]
   }>(), {
+    showFireworkAction: true,
     showHeaderActions: true,
     showRootSwitcher: true,
     showSummary: true,
   })
 
   const emit = defineEmits<{
+    burstGraph: []
     clearRequested: []
     refreshTree: []
     selectNode: [nodeId: number]
@@ -281,7 +298,7 @@
     background: linear-gradient(90deg, rgba(129, 140, 248, 0.08), transparent 50%);
     border-bottom: 1px solid var(--border-soft);
     margin: -2px 0 0;
-    padding: 0 34px 14px 0;
+    padding: 0 50px 14px 0;
   }
 
   .branch-tools {
@@ -331,6 +348,22 @@
   .icon-action:hover {
     background: var(--icon-button-hover);
     border-color: var(--border-bright, var(--border));
+  }
+
+  .burst-action {
+    background: rgba(250, 204, 21, 0.14);
+    border-color: rgba(250, 204, 21, 0.32);
+    color: #fef3c7;
+  }
+
+  .burst-action :deep(.v-btn__content),
+  .burst-action :deep(.v-icon) {
+    color: #fef3c7;
+  }
+
+  .burst-action:hover {
+    background: rgba(250, 204, 21, 0.22);
+    border-color: rgba(250, 204, 21, 0.52);
   }
 
   .danger-action {
