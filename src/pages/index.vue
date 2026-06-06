@@ -312,6 +312,10 @@
   const selectedProvider = ref('ollama')
   const defaultModel = 'gemma3:4b'
   const selectedModel = ref(defaultModel)
+  const githubPagesBackendBaseUrl = 'https://git-api.ysh.xx.kg'
+  const configuredBackendBaseUrl = import.meta.env.VITE_BACKEND_BASE_URL?.trim().replace(/\/+$/, '') || ''
+  const isGitHubPagesDeploy = window.location.hostname === 'git-ai.ysh.xx.kg'
+  const backendBaseUrl = configuredBackendBaseUrl || (isGitHubPagesDeploy ? githubPagesBackendBaseUrl : '')
   const defaultOllamaBaseUrl = import.meta.env.VITE_OLLAMA_BASE_URL?.trim() || 'http://localhost:11434'
   const ollamaBaseUrl = ref(defaultOllamaBaseUrl)
   const ollamaModels = ref<string[]>([])
@@ -581,9 +585,12 @@
   ) => {
     const controller = new AbortController()
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+    const requestInput = typeof input === 'string' && input.startsWith('/api')
+      ? `${backendBaseUrl}${input}`
+      : input
 
     try {
-      return await fetch(input, {
+      return await fetch(requestInput, {
         ...init,
         credentials: 'include',
         signal: controller.signal,
