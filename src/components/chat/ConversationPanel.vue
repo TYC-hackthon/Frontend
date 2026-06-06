@@ -50,7 +50,7 @@
             {{ message.role === 'user' ? 'You' : 'Assistant' }}
             <small v-if="message.nodeId">#{{ message.nodeId }}</small>
           </span>
-          <p>{{ message.content }}</p>
+          <MessageRenderer :content="message.content" />
         </article>
       </div>
 
@@ -108,6 +108,7 @@
 
 <script setup lang="ts">
   import { nextTick, ref } from 'vue'
+  import MessageRenderer from '@/components/chat/MessageRenderer.vue'
   import type { ChatMessage } from '@/types/chat'
 
   defineProps<{
@@ -262,11 +263,6 @@
   .message-bubble small {
     font-size: 0.7rem;
     font-weight: 900;
-  }
-
-  .message-bubble p {
-    margin: 0;
-    white-space: pre-wrap;
   }
 
   .empty-context {
