@@ -1034,7 +1034,7 @@
 
   :global(body),
   :global(.v-application) {
-    background: #0b1120;
+    background: #070b13;
   }
 
   :global(.v-overlay-container .v-list) {
@@ -1060,17 +1060,18 @@
   }
 
   .chat-page {
-    --app-bg: #0b1120;
-    --app-bg-accent-a: rgba(45, 212, 191, 0.11);
-    --app-bg-accent-b: rgba(129, 140, 248, 0.1);
+    --app-bg: #070b13;
+    --app-bg-accent-a: rgba(20, 184, 166, 0.16);
+    --app-bg-accent-b: rgba(99, 102, 241, 0.12);
     --assistant-accent: #818cf8;
-    --assistant-bubble-bg: #1e293b;
+    --assistant-bubble-bg: #151d2d;
     --assistant-bubble-text: #f8fafc;
     --assistant-node-bg: rgba(129, 140, 248, 0.16);
     --exchange-accent: #f59e0b;
     --exchange-node-bg: rgba(245, 158, 11, 0.14);
-    --border: rgba(148, 163, 184, 0.24);
-    --border-soft: rgba(148, 163, 184, 0.16);
+    --border: rgba(148, 163, 184, 0.26);
+    --border-bright: rgba(226, 232, 240, 0.14);
+    --border-soft: rgba(148, 163, 184, 0.14);
     --button-primary-bg: #2dd4bf;
     --button-primary-hover: #5eead4;
     --button-primary-text: #042f2e;
@@ -1079,8 +1080,8 @@
     --button-secondary-text: #ccfbf1;
     --chip-bg: rgba(148, 163, 184, 0.14);
     --chip-text: #f8fafc;
-    --field-bg: #111827;
-    --field-bg-focus: #0f172a;
+    --field-bg: rgba(15, 23, 42, 0.84);
+    --field-bg-focus: rgba(15, 23, 42, 0.96);
     --icon-button-bg: rgba(148, 163, 184, 0.14);
     --icon-button-hover: rgba(148, 163, 184, 0.24);
     --icon-button-text: #f8fafc;
@@ -1090,17 +1091,21 @@
     --danger-text: #fecaca;
     --primary: #14b8a6;
     --primary-node-bg: rgba(20, 184, 166, 0.16);
-    --shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
-    --surface: #0f172a;
-    --surface-raised: #111827;
+    --shadow: 0 22px 70px rgba(0, 0, 0, 0.46);
+    --shadow-soft: 0 14px 36px rgba(0, 0, 0, 0.28);
+    --surface: rgba(15, 23, 42, 0.9);
+    --surface-glass: rgba(15, 23, 42, 0.74);
+    --surface-raised: rgba(17, 24, 39, 0.92);
+    --surface-sunken: rgba(2, 6, 23, 0.28);
     --text-muted: #cbd5e1;
     --text-subtle: #94a3b8;
     --text-strong: #f8fafc;
-    --user-bubble-bg: #115e59;
+    --user-bubble-bg: #0f766e;
     --user-bubble-text: #ecfeff;
     background:
-      linear-gradient(135deg, var(--app-bg-accent-a), transparent 30%),
-      linear-gradient(315deg, var(--app-bg-accent-b), transparent 34%),
+      radial-gradient(circle at 18% 12%, var(--app-bg-accent-a), transparent 32%),
+      radial-gradient(circle at 82% 10%, var(--app-bg-accent-b), transparent 34%),
+      linear-gradient(180deg, rgba(15, 23, 42, 0.72), transparent 42%),
       var(--app-bg);
     box-sizing: border-box;
     color: var(--text-strong);
@@ -1114,8 +1119,8 @@
 
   .workspace-shell {
     display: grid;
-    gap: 10px;
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) minmax(236px, 300px);
     height: 100%;
     min-height: 0;
     overflow: hidden;
@@ -1147,6 +1152,7 @@
     min-width: 34px;
     width: 34px;
     z-index: 4;
+    transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
   }
 
   .branch-panel-toggle :deep(.v-btn__content),
@@ -1156,6 +1162,8 @@
 
   .branch-panel-toggle:hover {
     background: var(--icon-button-hover);
+    border-color: var(--border-bright, var(--border));
+    transform: translateY(-1px);
   }
 
   .branch-panel-toggle--collapse {
@@ -1174,11 +1182,11 @@
     color: var(--text-strong);
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 16px;
     height: 100%;
     min-height: 0;
     overflow: hidden;
-    padding: 16px;
+    padding: 16px 14px;
   }
 
   .root-history-header {
@@ -1187,7 +1195,7 @@
     display: flex;
     gap: 12px;
     justify-content: space-between;
-    padding-bottom: 12px;
+    padding: 0 2px 13px;
   }
 
   .eyebrow {
@@ -1217,6 +1225,7 @@
 
   .root-history-action {
     background: var(--icon-button-bg);
+    border: 1px solid var(--border-soft);
     border-radius: 8px;
     box-shadow: none;
     color: var(--icon-button-text);
@@ -1232,6 +1241,7 @@
 
   .root-history-action:hover {
     background: var(--icon-button-hover);
+    border-color: var(--border-bright, var(--border));
   }
 
   .root-history-action--danger {
@@ -1250,7 +1260,9 @@
   }
 
   .root-history-summary {
-    background: var(--surface-raised);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+      var(--surface-raised);
     border: 1px solid var(--border-soft);
     border-radius: 8px;
     display: grid;
@@ -1296,7 +1308,7 @@
 
   .root-history-item {
     align-items: center;
-    background: transparent;
+    background: rgba(15, 23, 42, 0.2);
     border: 1px solid transparent;
     border-radius: 8px;
     color: var(--text-strong);
@@ -1306,8 +1318,21 @@
     grid-template-columns: 34px minmax(0, 1fr);
     min-height: 58px;
     padding: 8px;
+    position: relative;
     text-align: left;
+    transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
     width: 100%;
+  }
+
+  .root-history-item::before {
+    background: transparent;
+    border-radius: 999px;
+    bottom: 10px;
+    content: "";
+    left: -1px;
+    position: absolute;
+    top: 10px;
+    width: 3px;
   }
 
   .root-history-item:disabled {
@@ -1316,8 +1341,17 @@
 
   .root-history-item:hover:not(:disabled),
   .root-history-item--active {
-    background: rgba(45, 212, 191, 0.12);
+    background:
+      linear-gradient(90deg, rgba(45, 212, 191, 0.14), rgba(45, 212, 191, 0.05));
     border-color: rgba(45, 212, 191, 0.38);
+  }
+
+  .root-history-item:hover:not(:disabled) {
+    transform: translateX(2px);
+  }
+
+  .root-history-item--active::before {
+    background: #2dd4bf;
   }
 
   .root-history-item__icon {
@@ -1350,6 +1384,9 @@
     font-size: 0.82rem;
     font-weight: 900;
     line-height: 1.1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .root-history-item__preview {

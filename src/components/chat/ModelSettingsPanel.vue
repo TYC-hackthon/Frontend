@@ -197,8 +197,8 @@
     border: 0;
     box-shadow: none;
     display: grid;
-    gap: 8px;
-    grid-template-columns: minmax(150px, 210px) minmax(0, 1fr);
+    gap: 10px;
+    grid-template-columns: minmax(156px, 220px) minmax(0, 1fr);
     overflow: visible;
     padding: 0;
     width: 100%;
@@ -260,7 +260,9 @@
 
   .account-panel {
     align-items: center;
-    background: var(--surface-raised);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent),
+      var(--surface-raised);
     border: 1px solid var(--border-soft);
     border-radius: 8px;
     display: flex;
@@ -270,10 +272,10 @@
   }
 
   .model-panel--nav .account-panel {
-    background: transparent;
-    border-color: var(--border-soft);
+    background: rgba(15, 23, 42, 0.56);
+    border-color: var(--border);
     min-height: 38px;
-    padding: 4px 6px;
+    padding: 5px 6px 5px 10px;
   }
 
   .model-panel--nav .account-identity .eyebrow {
@@ -306,6 +308,7 @@
 
   .icon-action {
     background: var(--icon-button-bg);
+    border: 1px solid var(--border-soft);
     border-radius: 8px;
     box-shadow: none;
     color: var(--icon-button-text);
@@ -330,6 +333,7 @@
 
   .icon-action:hover {
     background: var(--icon-button-hover);
+    border-color: var(--border-bright, var(--border));
   }
 
   .model-panel--nav .control-stack {
@@ -341,6 +345,20 @@
       minmax(136px, 180px)
       minmax(190px, 1fr)
       auto;
+  }
+
+  .model-panel--nav :deep(.v-field) {
+    background: rgba(15, 23, 42, 0.68);
+    border-radius: 8px;
+  }
+
+  .model-panel--nav :deep(.v-field:hover),
+  .model-panel--nav :deep(.v-field--focused) {
+    background: rgba(15, 23, 42, 0.92);
+  }
+
+  .model-panel--nav :deep(.v-field__outline) {
+    color: var(--border);
   }
 
   .ollama-settings {
@@ -378,6 +396,7 @@
 
   .secondary-action:hover {
     background: var(--button-secondary-hover);
+    border-color: rgba(94, 234, 212, 0.38);
   }
 
   .prompt-action {
@@ -385,7 +404,10 @@
   }
 
   .system-prompt-menu {
-    background: var(--surface, #0f172a);
+    backdrop-filter: blur(16px);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 34%),
+      var(--surface, #0f172a);
     border: 1px solid var(--border, rgba(148, 163, 184, 0.24));
     border-radius: 8px;
     box-shadow: var(--shadow, 0 18px 48px rgba(0, 0, 0, 0.36));

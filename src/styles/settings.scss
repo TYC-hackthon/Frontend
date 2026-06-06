@@ -1,19 +1,18 @@
 
 :root {
-  /* Brand palette (Nunito + Inter) */
-  /* Single, consistent cream background */
-  --color-bg: #FAF7EF;             /* warm off-white */
-  --color-bg-2: #FAF7EF;           /* keep for compatibility, same as bg */
-  --color-surface: #FFFFFF;        /* clean card */
-  --color-primary: #AAAA00;        /* deep green */
-  --color-primary-600: #AAAA00;    /* hover green */
-  --color-secondary: #00AAAA;      /* light green accent */
-  --color-accent: #CFE7B0;         /* pale green */
-  --color-text: #0E3E34;           /* ink green */
-  --color-muted: #6A7C76;          /* muted neutral */
+  /* Professional console palette */
+  --color-bg: #070b13;
+  --color-bg-2: #0f172a;
+  --color-surface: #111827;
+  --color-primary: #14b8a6;
+  --color-primary-600: #2dd4bf;
+  --color-secondary: #818cf8;
+  --color-accent: #f59e0b;
+  --color-text: #f8fafc;
+  --color-muted: #94a3b8;
 
-  --radius: 14px;
-  --radius-sm: 10px;
+  --radius: 8px;
+  --radius-sm: 8px;
   --nav-blur: 16px;
   --shadow-sm: 0 6px 16px rgba(0,0,0,.08);
   --shadow-md: 0 10px 24px rgba(0,0,0,.12);
@@ -70,7 +69,7 @@ a:hover { color: var(--color-primary-600); }
 /* Vuetify adjustments */
 .v-card { border-radius: var(--radius);}
 .v-card--variant-elevated { box-shadow: var(--shadow-sm); }
-.v-btn { border-radius: 999px; font-weight: 700; }
+.v-btn { border-radius: var(--radius-sm); font-weight: 700; }
 .v-application { background: transparent !important; }
 
 /* Utility */

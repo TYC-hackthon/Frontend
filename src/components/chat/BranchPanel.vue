@@ -248,7 +248,10 @@
 
 <style scoped>
   .workspace-panel {
-    background: var(--surface);
+    backdrop-filter: blur(16px);
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 28%),
+      var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
     box-shadow: var(--shadow);
@@ -275,9 +278,10 @@
   }
 
   .branch-header {
+    background: linear-gradient(90deg, rgba(129, 140, 248, 0.08), transparent 50%);
     border-bottom: 1px solid var(--border-soft);
     margin: -2px 0 0;
-    padding-bottom: 14px;
+    padding: 0 34px 14px 0;
   }
 
   .branch-tools {
@@ -307,6 +311,7 @@
 
   .icon-action {
     background: var(--icon-button-bg);
+    border: 1px solid var(--border-soft);
     border-radius: 8px;
     box-shadow: none;
     color: var(--icon-button-text);
@@ -325,6 +330,7 @@
 
   .icon-action:hover {
     background: var(--icon-button-hover);
+    border-color: var(--border-bright, var(--border));
   }
 
   .danger-action {
@@ -440,6 +446,11 @@
 
   .branch-tree {
     align-content: start;
+    background:
+      linear-gradient(90deg, rgba(148, 163, 184, 0.04) 1px, transparent 1px),
+      transparent;
+    background-size: 18px 100%;
+    border-radius: 8px;
     display: grid;
     flex: 1;
     gap: 0;
@@ -467,12 +478,12 @@
 
   .branch-node {
     --graph-lane-width: 18px;
-    --graph-line: rgba(148, 163, 184, 0.42);
+    --graph-line: rgba(148, 163, 184, 0.36);
     --node-active-bg: rgba(20, 184, 166, 0.16);
     --node-active-ring: rgba(20, 184, 166, 0.28);
     --node-accent: var(--primary);
     align-items: center;
-    background: transparent;
+    background: rgba(15, 23, 42, 0.18);
     border: 1px solid transparent;
     border-radius: 8px;
     color: var(--text-strong);
@@ -483,8 +494,23 @@
     min-height: 54px;
     min-width: 220px;
     padding: 0 8px 0 2px;
+    position: relative;
     text-align: left;
+    transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
     width: 100%;
+  }
+
+  .branch-node::after {
+    background: var(--node-accent);
+    border-radius: 999px;
+    bottom: 9px;
+    content: "";
+    opacity: 0;
+    position: absolute;
+    right: 5px;
+    top: 9px;
+    transition: opacity 0.16s ease;
+    width: 3px;
   }
 
   .branch-node:disabled {
@@ -493,8 +519,17 @@
 
   .branch-node:hover:not(:disabled),
   .branch-node--active {
-    background: var(--node-active-bg);
+    background:
+      linear-gradient(90deg, var(--node-active-bg), rgba(15, 23, 42, 0.16));
     border-color: var(--node-accent);
+  }
+
+  .branch-node:hover:not(:disabled) {
+    transform: translateX(2px);
+  }
+
+  .branch-node--active::after {
+    opacity: 1;
   }
 
   .branch-node__graph {
@@ -520,10 +555,21 @@
     text-transform: uppercase;
   }
 
+  .branch-node--active .branch-node__meta {
+    color: var(--text-muted);
+  }
+
   .branch-node__preview {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.25;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .branch-node--active .branch-node__preview {
+    color: var(--text-strong);
   }
 
   .branch-node__children {
@@ -533,8 +579,9 @@
   .branch-node__fork {
     background: var(--node-accent);
     border-radius: 999px;
-    height: 2px;
-    opacity: 0.78;
+    box-shadow: 0 0 14px color-mix(in srgb, var(--node-accent) 48%, transparent);
+    height: 3px;
+    opacity: 0.82;
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
@@ -563,7 +610,7 @@
     position: absolute;
     top: 0;
     transform: translateX(-50%);
-    width: 2px;
+    width: 3px;
   }
 
   .branch-graph__lane--through::before {
@@ -604,19 +651,43 @@
     border: 3px solid var(--node-accent);
     border-radius: 999px;
     box-shadow: 0 0 0 3px var(--surface);
-    height: 13px;
+    height: 14px;
     left: 50%;
     position: absolute;
     top: 50%;
     transform: translate(-50%, -50%);
-    width: 13px;
+    width: 14px;
     z-index: 2;
   }
 
   .branch-node:hover:not(:disabled) .branch-graph__dot,
   .branch-node--active .branch-graph__dot {
     background: var(--node-accent);
-    box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--node-active-ring);
+    box-shadow:
+      0 0 0 3px var(--surface),
+      0 0 0 7px var(--node-active-ring),
+      0 0 24px color-mix(in srgb, var(--node-accent) 46%, transparent);
+  }
+
+  .branch-node--active .branch-graph__dot {
+    animation: active-node-pulse 2.2s ease-in-out infinite;
+  }
+
+  @keyframes active-node-pulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 3px var(--surface),
+        0 0 0 7px var(--node-active-ring),
+        0 0 18px color-mix(in srgb, var(--node-accent) 36%, transparent);
+    }
+
+    50% {
+      box-shadow:
+        0 0 0 3px var(--surface),
+        0 0 0 9px var(--node-active-ring),
+        0 0 34px color-mix(in srgb, var(--node-accent) 58%, transparent);
+    }
   }
 
   @media (max-width: 1420px) {
@@ -634,6 +705,12 @@
     .branch-panel {
       overflow: hidden;
       padding: 16px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .branch-node--active .branch-graph__dot {
+      animation: none;
     }
   }
 </style>
