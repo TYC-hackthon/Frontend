@@ -16,6 +16,41 @@
       </v-chip>
     </header>
 
+    <div class="account-panel">
+      <div class="account-identity">
+        <p class="eyebrow">Signed in</p>
+        <strong>{{ currentUsername }}</strong>
+      </div>
+
+      <div class="account-actions">
+        <v-tooltip v-if="isAdmin" text="Admin" location="bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              aria-label="Admin"
+              class="icon-action"
+              icon="mdi-shield-crown-outline"
+              variant="flat"
+              @click="emit('openAdmin')"
+            />
+          </template>
+        </v-tooltip>
+
+        <v-tooltip text="Sign out" location="bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              aria-label="Sign out"
+              class="icon-action"
+              icon="mdi-logout"
+              variant="flat"
+              @click="emit('logout')"
+            />
+          </template>
+        </v-tooltip>
+      </div>
+    </div>
+
     <div class="control-stack">
       <v-select
         v-model="selectedProvider"
@@ -77,7 +112,9 @@
   import type { Provider } from '@/types/chat'
 
   defineProps<{
+    currentUsername: string
     defaultOllamaBaseUrl: string
+    isAdmin: boolean
     isDetectingModels: boolean
     isReady: boolean
     modelOptions: string[]
@@ -86,6 +123,8 @@
 
   const emit = defineEmits<{
     detectModels: [silent: boolean]
+    logout: []
+    openAdmin: []
   }>()
 
   const selectedProvider = defineModel<string>('selectedProvider', { required: true })
@@ -151,6 +190,59 @@
   .control-stack {
     display: grid;
     gap: 12px;
+  }
+
+  .account-panel {
+    align-items: center;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    padding: 12px;
+  }
+
+  .account-identity {
+    min-width: 0;
+  }
+
+  .account-identity strong {
+    color: var(--text-strong);
+    display: block;
+    font-weight: 900;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .account-actions {
+    align-items: center;
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+  }
+
+  .icon-action {
+    background: var(--icon-button-bg);
+    border-radius: 8px;
+    box-shadow: none;
+    color: var(--icon-button-text);
+    font-weight: 800;
+    height: 38px;
+    letter-spacing: 0;
+    min-width: 38px;
+    text-transform: none;
+    width: 38px;
+  }
+
+  .icon-action :deep(.v-btn__content),
+  .icon-action :deep(.v-icon) {
+    color: var(--icon-button-text);
+  }
+
+  .icon-action:hover {
+    background: var(--icon-button-hover);
   }
 
   .ollama-settings {

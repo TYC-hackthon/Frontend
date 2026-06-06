@@ -6,6 +6,37 @@ export type Provider = {
   hint: string
 }
 
+export type AuthUser = {
+  id: number
+  username: string
+  is_admin: boolean
+  is_active: boolean
+  created_at: string | null
+  node_count?: number
+}
+
+export type AuthStatusPayload = {
+  authenticated: boolean
+  needs_setup: boolean
+  user: AuthUser | null
+}
+
+export type AdminUsersPayload = {
+  users: AuthUser[]
+}
+
+export type CreateUserPayload = {
+  username: string
+  password: string
+  is_admin: boolean
+}
+
+export type UpdateUserPayload = {
+  password?: string
+  is_admin?: boolean
+  is_active?: boolean
+}
+
 export type ConversationRole = 'user' | 'assistant'
 export type NodeRole = ConversationRole | 'exchange'
 

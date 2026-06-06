@@ -7,11 +7,11 @@
     <section class="confirm-dialog">
       <header>
         <v-icon icon="mdi-trash-can-outline" size="22" />
-        <h2>Clear database</h2>
+        <h2>Clear history</h2>
       </header>
 
       <p>
-        This removes every saved conversation node from the backend database.
+        This removes every saved conversation node for your account.
       </p>
 
       <div class="dialog-actions">

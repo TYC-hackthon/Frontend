@@ -35,11 +35,11 @@
           </template>
         </v-tooltip>
 
-        <v-tooltip text="Clear database" location="bottom">
+        <v-tooltip text="Clear history" location="bottom">
           <template #activator="{ props: tooltipProps }">
             <v-btn
               v-bind="tooltipProps"
-              aria-label="Clear database"
+              aria-label="Clear history"
               class="icon-action danger-action"
               :disabled="isClearingDatabase || treeNodes.length === 0"
               icon="mdi-trash-can-outline"

@@ -1,17 +1,34 @@
 <template>
   <v-container class="chat-page" fluid>
-    <section class="workspace-shell">
+    <div v-if="isCheckingSession" class="session-shell">
+      <v-progress-circular indeterminate size="42" />
+    </div>
+
+    <AuthPanel
+      v-else-if="!currentUser"
+      :error-message="authErrorMessage"
+      :is-submitting="isAuthSubmitting"
+      :needs-setup="needsSetup"
+      @login="login"
+      @setup="setupAdmin"
+    />
+
+    <section v-else class="workspace-shell">
       <ModelSettingsPanel
         v-model:ollama-base-url="ollamaBaseUrl"
         v-model:selected-model="selectedModel"
         v-model:selected-provider="selectedProvider"
         v-model:system-prompt="systemPrompt"
+        :current-username="currentUser.username"
         :default-ollama-base-url="defaultOllamaBaseUrl"
+        :is-admin="currentUser.is_admin"
         :is-detecting-models="isDetectingModels"
         :is-ready="isReady"
         :model-options="modelOptions"
         :providers="providers"
         @detect-models="detectOllamaModels"
+        @logout="logout"
+        @open-admin="openAdminPanel"
       />
 
       <ConversationPanel
@@ -52,27 +69,48 @@
         :is-clearing-database="isClearingDatabase"
         @confirm="clearDatabase"
       />
+
+      <AdminPanel
+        v-if="currentUser.is_admin"
+        v-model="isAdminPanelOpen"
+        :error-message="adminErrorMessage"
+        :is-loading="isLoadingAdminUsers"
+        :is-saving="isSavingAdmin"
+        :users="adminUsers"
+        @clear-user-nodes="clearUserNodes"
+        @create-user="createUser"
+        @dismiss-error="adminErrorMessage = ''"
+        @refresh="loadAdminUsers"
+        @update-user="updateUser"
+      />
     </section>
   </v-container>
 </template>
 
 <script lang="ts" setup>
   import { computed, onMounted, ref, watch } from 'vue'
+  import AdminPanel from '@/components/chat/AdminPanel.vue'
+  import AuthPanel from '@/components/chat/AuthPanel.vue'
   import BranchPanel from '@/components/chat/BranchPanel.vue'
   import ClearDatabaseDialog from '@/components/chat/ClearDatabaseDialog.vue'
   import ConversationPanel from '@/components/chat/ConversationPanel.vue'
   import ModelSettingsPanel from '@/components/chat/ModelSettingsPanel.vue'
   import type {
+    AdminUsersPayload,
     ApiResponse,
+    AuthStatusPayload,
+    AuthUser,
     ChatMessage,
     ChatResponsePayload,
     ContextMessage,
     ContextPayload,
+    CreateUserPayload,
     FlattenedNode,
     MessageNode,
     Provider,
     RootTreeOption,
     TreePayload,
+    UpdateUserPayload,
   } from '@/types/chat'
 
   const fallbackProviders: Provider[] = [
@@ -92,6 +130,16 @@
     },
   ]
 
+  const currentUser = ref<AuthUser | null>(null)
+  const needsSetup = ref(false)
+  const isCheckingSession = ref(true)
+  const isAuthSubmitting = ref(false)
+  const authErrorMessage = ref('')
+  const isAdminPanelOpen = ref(false)
+  const adminUsers = ref<AuthUser[]>([])
+  const isLoadingAdminUsers = ref(false)
+  const isSavingAdmin = ref(false)
+  const adminErrorMessage = ref('')
   const providers = ref<Provider[]>(fallbackProviders)
   const selectedProvider = ref('ollama')
   const defaultModel = 'gemma3:4b'
@@ -348,12 +396,16 @@
   const isReady = computed(() => Boolean(activeProvider.value?.configured))
 
   const canSend = computed(() =>
+    currentUser.value !== null &&
     draft.value.trim().length > 0 &&
     selectedProvider.value.length > 0 &&
     selectedModel.value.trim().length > 0 &&
     !isSending.value &&
     !isLoadingContext.value
   )
+
+  const apiFetch = (input: RequestInfo | URL, init: RequestInit = {}) =>
+    fetch(input, { ...init, credentials: 'include' })
 
   const assertOk = async <T>(response: Response, fallback: string): Promise<T> => {
     const payload = await response.json() as ApiResponse<T>
@@ -400,9 +452,24 @@
     activeTreeRootId.value = treeRoots.value[0] ?? null
   }
 
+  const resetWorkspaceState = () => {
+    messages.value = []
+    treeNodes.value = []
+    treeRoots.value = []
+    activeTreeRootId.value = null
+    currentNodeId.value = null
+    isNewRootDraftActive.value = false
+    draft.value = ''
+    errorMessage.value = ''
+    isClearDialogOpen.value = false
+    isAdminPanelOpen.value = false
+    adminUsers.value = []
+    adminErrorMessage.value = ''
+  }
+
   const loadModels = async () => {
     try {
-      const response = await fetch('/api/models')
+      const response = await apiFetch('/api/models')
       providers.value = await assertOk<Provider[]>(response, 'Unable to load models.')
     } catch {
       providers.value = fallbackProviders
@@ -414,7 +481,7 @@
     isLoadingTree.value = true
 
     try {
-      const response = await fetch('/api/tree')
+      const response = await apiFetch('/api/tree')
       const data = await assertOk<TreePayload>(response, 'Unable to load conversation tree.')
       treeNodes.value = data.nodes.map(normalizeTreeNode)
       treeRoots.value = data.roots
@@ -436,7 +503,7 @@
     errorMessage.value = ''
 
     try {
-      const response = await fetch(`/api/context/${nodeId}`)
+      const response = await apiFetch(`/api/context/${nodeId}`)
       const data = await assertOk<ContextPayload>(response, 'Unable to load node context.')
       messages.value = data.messages.map(messageFromContextMessage)
       currentNodeId.value = data.node_id
@@ -483,8 +550,8 @@
     errorMessage.value = ''
 
     try {
-      const response = await fetch('/api/nodes', { method: 'DELETE' })
-      await assertOk<{ deleted: number }>(response, 'Unable to clear database.')
+      const response = await apiFetch('/api/nodes', { method: 'DELETE' })
+      await assertOk<{ deleted: number }>(response, 'Unable to clear history.')
       treeNodes.value = []
       treeRoots.value = []
       activeTreeRootId.value = null
@@ -495,7 +562,7 @@
       isClearDialogOpen.value = false
       await scrollToBottom()
     } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : 'Unable to clear database.'
+      errorMessage.value = error instanceof Error ? error.message : 'Unable to clear history.'
     } finally {
       isClearingDatabase.value = false
     }
@@ -509,7 +576,7 @@
 
     try {
       const params = new URLSearchParams({ base_url: ollamaBaseUrl.value.trim() })
-      const response = await fetch(`/api/ollama/models?${params.toString()}`)
+      const response = await apiFetch(`/api/ollama/models?${params.toString()}`)
       const data = await assertOk<{ models: string[] }>(response, 'Unable to detect Ollama models.')
 
       ollamaModels.value = data.models
@@ -525,9 +592,178 @@
     }
   }
 
+  const applyAuthPayload = (data: AuthStatusPayload) => {
+    needsSetup.value = data.needs_setup
+    currentUser.value = data.authenticated ? data.user : null
+    if (!currentUser.value) {
+      resetWorkspaceState()
+    }
+  }
+
+  const loadWorkspace = async () => {
+    await loadModels()
+    await loadTree()
+    if (currentNodeId.value === null && activeTreeRootId.value !== null) {
+      await loadContext(activeTreeRootId.value)
+    }
+    await detectOllamaModels(true)
+  }
+
+  const loadSession = async () => {
+    isCheckingSession.value = true
+    authErrorMessage.value = ''
+
+    try {
+      const response = await apiFetch('/api/auth/status')
+      const data = await assertOk<AuthStatusPayload>(response, 'Unable to read session.')
+      applyAuthPayload(data)
+
+      if (currentUser.value) {
+        await loadWorkspace()
+      }
+    } catch (error) {
+      currentUser.value = null
+      authErrorMessage.value = error instanceof Error ? error.message : 'Unable to read session.'
+      resetWorkspaceState()
+    } finally {
+      isCheckingSession.value = false
+    }
+  }
+
+  const completeAuth = async (endpoint: string, payload: { username: string; password: string }) => {
+    isAuthSubmitting.value = true
+    authErrorMessage.value = ''
+
+    try {
+      const response = await apiFetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await assertOk<AuthStatusPayload>(response, 'Authentication failed.')
+      applyAuthPayload(data)
+      resetWorkspaceState()
+
+      if (currentUser.value) {
+        await loadWorkspace()
+      }
+    } catch (error) {
+      authErrorMessage.value = error instanceof Error ? error.message : 'Authentication failed.'
+    } finally {
+      isAuthSubmitting.value = false
+    }
+  }
+
+  const login = async (payload: { username: string; password: string }) => {
+    await completeAuth('/api/auth/login', payload)
+  }
+
+  const setupAdmin = async (payload: { username: string; password: string }) => {
+    await completeAuth('/api/auth/setup', payload)
+  }
+
+  const logout = async () => {
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' })
+    } finally {
+      currentUser.value = null
+      needsSetup.value = false
+      resetWorkspaceState()
+    }
+  }
+
+  const loadAdminUsers = async () => {
+    if (!currentUser.value?.is_admin) return
+
+    isLoadingAdminUsers.value = true
+    adminErrorMessage.value = ''
+
+    try {
+      const response = await apiFetch('/api/admin/users')
+      const data = await assertOk<AdminUsersPayload>(response, 'Unable to load users.')
+      adminUsers.value = data.users
+    } catch (error) {
+      adminErrorMessage.value = error instanceof Error ? error.message : 'Unable to load users.'
+    } finally {
+      isLoadingAdminUsers.value = false
+    }
+  }
+
+  const openAdminPanel = async () => {
+    isAdminPanelOpen.value = true
+    await loadAdminUsers()
+  }
+
+  const createUser = async (payload: CreateUserPayload) => {
+    if (!currentUser.value?.is_admin || isSavingAdmin.value) return
+
+    isSavingAdmin.value = true
+    adminErrorMessage.value = ''
+
+    try {
+      const response = await apiFetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      await assertOk<{ user: AuthUser }>(response, 'Unable to create user.')
+      await loadAdminUsers()
+    } catch (error) {
+      adminErrorMessage.value = error instanceof Error ? error.message : 'Unable to create user.'
+    } finally {
+      isSavingAdmin.value = false
+    }
+  }
+
+  const updateUser = async (userId: number, payload: UpdateUserPayload) => {
+    if (!currentUser.value?.is_admin || isSavingAdmin.value) return
+
+    isSavingAdmin.value = true
+    adminErrorMessage.value = ''
+
+    try {
+      const response = await apiFetch(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await assertOk<{ user: AuthUser }>(response, 'Unable to update user.')
+      if (currentUser.value?.id === data.user.id) {
+        currentUser.value = data.user
+      }
+      await loadAdminUsers()
+    } catch (error) {
+      adminErrorMessage.value = error instanceof Error ? error.message : 'Unable to update user.'
+    } finally {
+      isSavingAdmin.value = false
+    }
+  }
+
+  const clearUserNodes = async (userId: number) => {
+    if (!currentUser.value?.is_admin || isSavingAdmin.value) return
+
+    isSavingAdmin.value = true
+    adminErrorMessage.value = ''
+
+    try {
+      const response = await apiFetch(`/api/admin/users/${userId}/nodes`, { method: 'DELETE' })
+      await assertOk<{ deleted: number }>(response, 'Unable to clear conversations.')
+
+      if (currentUser.value.id === userId) {
+        await startRootConversation()
+        await loadTree()
+      }
+      await loadAdminUsers()
+    } catch (error) {
+      adminErrorMessage.value = error instanceof Error ? error.message : 'Unable to clear conversations.'
+    } finally {
+      isSavingAdmin.value = false
+    }
+  }
+
   const sendMessage = async () => {
     const content = draft.value.trim()
-    if (!content || isSending.value) return
+    if (!content || isSending.value || !currentUser.value) return
 
     errorMessage.value = ''
     draft.value = ''
@@ -543,7 +779,7 @@
 
     isSending.value = true
     try {
-      const response = await fetch('/api/chat', {
+      const response = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -589,12 +825,7 @@
   })
 
   onMounted(async () => {
-    await loadModels()
-    await loadTree()
-    if (currentNodeId.value === null && activeTreeRootId.value !== null) {
-      await loadContext(activeTreeRootId.value)
-    }
-    await detectOllamaModels(true)
+    await loadSession()
   })
 </script>
 
@@ -703,6 +934,15 @@
     height: 100%;
     min-height: 0;
     overflow: hidden;
+  }
+
+  .session-shell {
+    align-items: center;
+    color: var(--text-strong);
+    display: grid;
+    height: 100%;
+    justify-items: center;
+    min-height: 0;
   }
 
   :deep(.v-field) {
