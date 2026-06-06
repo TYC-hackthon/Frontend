@@ -1,398 +1,75 @@
 <template>
   <v-container class="chat-page" fluid>
     <section class="workspace-shell">
-      <aside class="workspace-panel model-panel">
-        <header class="panel-header">
-          <div>
-            <p class="eyebrow">Git-like AI Chat</p>
-            <h1>Workspace</h1>
-          </div>
+      <ModelSettingsPanel
+        v-model:ollama-base-url="ollamaBaseUrl"
+        v-model:selected-model="selectedModel"
+        v-model:selected-provider="selectedProvider"
+        v-model:system-prompt="systemPrompt"
+        :default-ollama-base-url="defaultOllamaBaseUrl"
+        :is-detecting-models="isDetectingModels"
+        :is-ready="isReady"
+        :model-options="modelOptions"
+        :providers="providers"
+        @detect-models="detectOllamaModels"
+      />
 
-          <v-chip
-            class="compact-chip"
-            :color="isReady ? 'teal' : 'deep-orange'"
-            prepend-icon="mdi-circle-medium"
-            variant="tonal"
-          >
-            {{ isReady ? 'Ready' : 'Setup' }}
-          </v-chip>
-        </header>
+      <ConversationPanel
+        ref="conversationPanelRef"
+        v-model:draft="draft"
+        :active-model-label="activeModelLabel"
+        :can-send="canSend"
+        :context-summary="contextSummary"
+        :error-message="errorMessage"
+        :is-loading-context="isLoadingContext"
+        :is-sending="isSending"
+        :messages="messages"
+        :node-count="treeNodes.length"
+        @dismiss-error="errorMessage = ''"
+        @send="sendMessage"
+      />
 
-        <div class="control-stack">
-          <v-select
-            v-model="selectedProvider"
-            density="comfortable"
-            hide-details
-            item-title="label"
-            item-value="provider"
-            label="Provider"
-            :items="providers"
-            variant="outlined"
-          />
+      <BranchPanel
+        :current-node-id="currentNodeId"
+        :current-node-label="currentNodeLabel"
+        :flattened-tree-nodes="flattenedTreeNodes"
+        :is-clearing-database="isClearingDatabase"
+        :is-loading-context="isLoadingContext"
+        :is-loading-tree="isLoadingTree"
+        :tree-nodes="treeNodes"
+        :tree-roots="treeRoots"
+        @clear-requested="isClearDialogOpen = true"
+        @refresh-tree="loadTree"
+        @select-node="selectNode"
+        @start-root="startRootConversation"
+      />
 
-          <v-combobox
-            v-model="selectedModel"
-            density="comfortable"
-            hide-details
-            label="Model"
-            :items="modelOptions"
-            variant="outlined"
-          />
-
-          <div v-if="selectedProvider === 'ollama'" class="ollama-settings">
-            <v-text-field
-              v-model="ollamaBaseUrl"
-              density="comfortable"
-              hide-details
-              label="Ollama Base URL"
-              :placeholder="defaultOllamaBaseUrl"
-              prepend-inner-icon="mdi-link-variant"
-              variant="outlined"
-              @blur="detectOllamaModels(true)"
-            />
-
-            <v-btn
-              class="action-button secondary-action"
-              :loading="isDetectingModels"
-              prepend-icon="mdi-magnify"
-              variant="flat"
-              @click="detectOllamaModels(false)"
-            >
-              Detect
-            </v-btn>
-          </div>
-
-          <v-textarea
-            v-model="systemPrompt"
-            auto-grow
-            density="comfortable"
-            hide-details
-            label="System prompt"
-            rows="5"
-            variant="outlined"
-          />
-        </div>
-
-      </aside>
-
-      <main class="workspace-panel conversation-panel">
-        <header class="conversation-header">
-          <div class="conversation-title">
-            <p class="eyebrow">Active model</p>
-            <h2>{{ activeModelLabel }}</h2>
-          </div>
-
-          <div class="conversation-status">
-            <v-chip
-              class="compact-chip"
-              color="indigo"
-              prepend-icon="mdi-vector-polyline"
-              variant="tonal"
-            >
-              {{ contextSummary }}
-            </v-chip>
-
-            <v-chip
-              class="compact-chip"
-              color="blue-grey"
-              prepend-icon="mdi-graph-outline"
-              variant="tonal"
-            >
-              {{ treeNodes.length }} nodes
-            </v-chip>
-          </div>
-        </header>
-
-        <div ref="messageListRef" class="message-list">
-          <div v-if="isLoadingContext" class="message-row message-row--assistant">
-            <article class="message-bubble">
-              <span>Context</span>
-              <v-progress-linear indeterminate rounded />
-            </article>
-          </div>
-
-          <p v-else-if="messages.length === 0" class="empty-context">
-            No active context
-          </p>
-
-          <div
-            v-for="message in messages"
-            :key="message.id"
-            class="message-row"
-            :class="`message-row--${message.role}`"
-          >
-            <article class="message-bubble">
-              <span>
-                {{ message.role === 'user' ? 'You' : 'Assistant' }}
-                <small v-if="message.nodeId">#{{ message.nodeId }}</small>
-              </span>
-              <p>{{ message.content }}</p>
-            </article>
-          </div>
-
-          <div v-if="isSending" class="message-row message-row--assistant">
-            <article class="message-bubble">
-              <span>Assistant</span>
-              <v-progress-linear indeterminate rounded />
-            </article>
-          </div>
-        </div>
-
-        <v-alert
-          v-if="errorMessage"
-          class="error-alert"
-          closable
-          density="compact"
-          type="error"
-          variant="tonal"
-          @click:close="errorMessage = ''"
-        >
-          {{ errorMessage }}
-        </v-alert>
-
-        <form class="composer" @submit.prevent="sendMessage">
-          <v-textarea
-            v-model="draft"
-            auto-grow
-            class="composer-input"
-            density="comfortable"
-            hide-details
-            label="Message"
-            max-rows="6"
-            rows="2"
-            variant="outlined"
-            @keydown.enter.exact.prevent="sendMessage"
-          />
-
-          <v-tooltip text="Send" location="top">
-            <template #activator="{ props }">
-              <v-btn
-                v-bind="props"
-                aria-label="Send"
-                class="send-button primary-action"
-                :disabled="!canSend"
-                icon="mdi-send"
-                :loading="isSending"
-                type="submit"
-                variant="flat"
-              />
-            </template>
-          </v-tooltip>
-        </form>
-      </main>
-
-      <aside class="workspace-panel branch-panel">
-        <header class="panel-header branch-header">
-          <div>
-            <p class="eyebrow">Branch</p>
-            <h2>{{ currentNodeLabel }}</h2>
-          </div>
-
-          <div class="branch-tools">
-            <v-tooltip text="New root" location="bottom">
-              <template #activator="{ props }">
-                <v-btn
-                  v-bind="props"
-                  aria-label="New root"
-                  class="icon-action"
-                  icon="mdi-source-branch-plus"
-                  variant="flat"
-                  @click="startRootConversation"
-                />
-              </template>
-            </v-tooltip>
-
-            <v-tooltip text="Refresh tree" location="bottom">
-              <template #activator="{ props }">
-                <v-btn
-                  v-bind="props"
-                  aria-label="Refresh tree"
-                  class="icon-action"
-                  :disabled="isLoadingTree"
-                  icon="mdi-refresh"
-                  :loading="isLoadingTree"
-                  variant="flat"
-                  @click="loadTree"
-                />
-              </template>
-            </v-tooltip>
-
-            <v-tooltip text="Clear database" location="bottom">
-              <template #activator="{ props }">
-                <v-btn
-                  v-bind="props"
-                  aria-label="Clear database"
-                  class="icon-action danger-action"
-                  :disabled="isClearingDatabase || treeNodes.length === 0"
-                  icon="mdi-trash-can-outline"
-                  :loading="isClearingDatabase"
-                  variant="flat"
-                  @click="isClearDialogOpen = true"
-                />
-              </template>
-            </v-tooltip>
-          </div>
-        </header>
-
-        <div class="branch-summary">
-          <div>
-            <span>{{ treeRoots.length }}</span>
-            <small>roots</small>
-          </div>
-          <div>
-            <span>{{ treeNodes.length }}</span>
-            <small>nodes</small>
-          </div>
-        </div>
-
-        <div class="branch-tree" :class="{ 'branch-tree--loading': isLoadingTree }">
-          <p v-if="treeNodes.length === 0" class="empty-tree">
-            No saved nodes
-          </p>
-
-          <button
-            v-for="item in flattenedTreeNodes"
-            :key="item.node.id"
-            class="branch-node"
-            :class="{
-              'branch-node--active': item.node.id === currentNodeId,
-              'branch-node--assistant': item.node.role === 'assistant',
-              'branch-node--exchange': item.node.role === 'exchange',
-            }"
-            :disabled="isLoadingContext"
-            :style="{ '--node-depth': item.depth }"
-            type="button"
-            @click="selectNode(item.node.id)"
-          >
-            <span class="branch-node__rail" />
-            <span class="branch-node__content">
-              <span class="branch-node__meta">
-                <v-icon :icon="nodeIcon(item.node)" size="16" />
-                <span>{{ item.node.role }}</span>
-                <span>#{{ item.node.id }}</span>
-              </span>
-              <span class="branch-node__preview">{{ nodePreview(item.node) }}</span>
-            </span>
-            <v-icon
-              v-if="item.node.children.length > 0"
-              class="branch-node__children"
-              icon="mdi-source-branch"
-              size="16"
-            />
-          </button>
-        </div>
-      </aside>
-
-      <v-dialog v-model="isClearDialogOpen" max-width="420">
-        <section class="confirm-dialog">
-          <header>
-            <v-icon icon="mdi-trash-can-outline" size="22" />
-            <h2>Clear database</h2>
-          </header>
-
-          <p>
-            This removes every saved conversation node from the backend database.
-          </p>
-
-          <div class="dialog-actions">
-            <v-btn
-              class="dialog-button"
-              variant="text"
-              @click="isClearDialogOpen = false"
-            >
-              Cancel
-            </v-btn>
-
-            <v-btn
-              class="dialog-button danger-button"
-              :loading="isClearingDatabase"
-              prepend-icon="mdi-trash-can-outline"
-              variant="flat"
-              @click="clearDatabase"
-            >
-              Clear
-            </v-btn>
-          </div>
-        </section>
-      </v-dialog>
+      <ClearDatabaseDialog
+        v-model="isClearDialogOpen"
+        :is-clearing-database="isClearingDatabase"
+        @confirm="clearDatabase"
+      />
     </section>
   </v-container>
 </template>
 
 <script lang="ts" setup>
-  import { computed, nextTick, onMounted, ref, watch } from 'vue'
-
-  type Provider = {
-    provider: string
-    label: string
-    models: string[]
-    configured: boolean
-    hint: string
-  }
-
-  type ConversationRole = 'user' | 'assistant'
-  type NodeRole = ConversationRole | 'exchange'
-
-  type ChatMessage = {
-    id: string
-    role: ConversationRole
-    content: string
-    nodeId?: number
-    parentId?: number | null
-    createdAt?: string | null
-  }
-
-  type MessageNode = {
-    id: number
-    parent_id: number | null
-    role: NodeRole
-    content: string
-    user_content?: string | null
-    assistant_content?: string | null
-    created_at: string | null
-    children: number[]
-  }
-
-  type ContextMessage = {
-    role: ConversationRole
-    content: string
-    node_id?: number
-    parent_id?: number | null
-    created_at?: string | null
-  }
-
-  type TreePayload = {
-    nodes: MessageNode[]
-    roots: number[]
-  }
-
-  type ContextPayload = {
-    node_id: number
-    nodes: MessageNode[]
-    messages: ContextMessage[]
-  }
-
-  type ChatResponsePayload = {
-    role: ConversationRole
-    content: string
-    user: MessageNode | null
-    assistant: MessageNode | null
-    exchange?: MessageNode | null
-    node: MessageNode | null
-    current_node_id?: number | null
-    currentNodeId?: number | null
-  }
-
-  type ApiResponse<T> = {
-    ok: boolean
-    data: T
-    error?: string
-  }
-
-  type FlattenedNode = {
-    node: MessageNode
-    depth: number
-  }
+  import { computed, onMounted, ref, watch } from 'vue'
+  import BranchPanel from '@/components/chat/BranchPanel.vue'
+  import ClearDatabaseDialog from '@/components/chat/ClearDatabaseDialog.vue'
+  import ConversationPanel from '@/components/chat/ConversationPanel.vue'
+  import ModelSettingsPanel from '@/components/chat/ModelSettingsPanel.vue'
+  import type {
+    ApiResponse,
+    ChatMessage,
+    ChatResponsePayload,
+    ContextMessage,
+    ContextPayload,
+    FlattenedNode,
+    MessageNode,
+    Provider,
+    TreePayload,
+  } from '@/types/chat'
 
   const fallbackProviders: Provider[] = [
     {
@@ -431,7 +108,7 @@
   const isClearingDatabase = ref(false)
   const isClearDialogOpen = ref(false)
   const errorMessage = ref('')
-  const messageListRef = ref<HTMLElement | null>(null)
+  const conversationPanelRef = ref<InstanceType<typeof ConversationPanel> | null>(null)
   let nextLocalMessageId = 1
 
   const activeProvider = computed(() =>
@@ -505,21 +182,6 @@
     !isLoadingContext.value
   )
 
-  const nodePreview = (node: MessageNode) => {
-    const compact = [node.user_content, node.assistant_content]
-      .filter(Boolean)
-      .join(' / ')
-      .trim() || node.content
-    const normalized = compact.replace(/\s+/g, ' ').trim()
-    if (!normalized) return '(empty)'
-    return normalized.length > 72 ? `${normalized.slice(0, 72)}...` : normalized
-  }
-
-  const nodeIcon = (node: MessageNode) => {
-    if (node.role === 'exchange') return 'mdi-swap-horizontal'
-    return node.role === 'user' ? 'mdi-account' : 'mdi-robot'
-  }
-
   const assertOk = async <T>(response: Response, fallback: string): Promise<T> => {
     const payload = await response.json() as ApiResponse<T>
     if (!payload.ok) throw new Error(payload.error ?? fallback)
@@ -541,9 +203,7 @@
   })
 
   const scrollToBottom = async () => {
-    await nextTick()
-    if (!messageListRef.value) return
-    messageListRef.value.scrollTop = messageListRef.value.scrollHeight
+    await conversationPanelRef.value?.scrollToBottom()
   }
 
   const loadModels = async () => {
@@ -806,37 +466,26 @@
     --text-strong: #f8fafc;
     --user-bubble-bg: #115e59;
     --user-bubble-text: #ecfeff;
+    background:
+      linear-gradient(135deg, var(--app-bg-accent-a), transparent 30%),
+      linear-gradient(315deg, var(--app-bg-accent-b), transparent 34%),
+      var(--app-bg);
     box-sizing: border-box;
     color: var(--text-strong);
     color-scheme: dark;
     height: 100%;
     min-height: 0;
     overflow: hidden;
-    width: 100%;
-    background:
-      linear-gradient(135deg, var(--app-bg-accent-a), transparent 30%),
-      linear-gradient(315deg, var(--app-bg-accent-b), transparent 34%),
-      var(--app-bg);
     padding: 18px;
+    width: 100%;
   }
 
   .workspace-shell {
     display: grid;
-    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(280px, 340px);
     gap: 14px;
+    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(280px, 340px);
     height: 100%;
     min-height: 0;
-    overflow: hidden;
-  }
-
-  .workspace-panel {
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    box-shadow: var(--shadow);
-    color: var(--text-strong);
-    min-height: 0;
-    min-width: 0;
     overflow: hidden;
   }
 
@@ -870,8 +519,7 @@
     color: var(--text-subtle);
   }
 
-  :deep(.v-chip),
-  .compact-chip {
+  :deep(.v-chip) {
     background: var(--chip-bg);
     color: var(--chip-text);
   }
@@ -888,468 +536,6 @@
     color: var(--text-strong);
   }
 
-  .model-panel,
-  .branch-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    min-height: 0;
-    overflow: hidden;
-    padding: 18px;
-  }
-
-  .model-panel {
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
-  .conversation-panel {
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto auto;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .panel-header,
-  .conversation-header {
-    align-items: center;
-    display: flex;
-    gap: 14px;
-    justify-content: space-between;
-  }
-
-  .conversation-header {
-    border-bottom: 1px solid var(--border-soft);
-    padding: 18px 20px;
-  }
-
-  .conversation-title {
-    min-width: 0;
-  }
-
-  .conversation-title h2 {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .conversation-status,
-  .branch-tools {
-    align-items: center;
-    display: flex;
-    flex: 0 0 auto;
-    gap: 8px;
-  }
-
-  .eyebrow {
-    color: var(--text-muted);
-    font-size: 0.72rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    margin: 0 0 4px;
-    text-transform: uppercase;
-  }
-
-  h1,
-  h2 {
-    color: var(--text-strong);
-    font-weight: 800;
-    letter-spacing: 0;
-    line-height: 1.15;
-    margin: 0;
-  }
-
-  h1 {
-    font-size: 1.6rem;
-  }
-
-  h2 {
-    font-size: 1.05rem;
-  }
-
-  .compact-chip {
-    flex: 0 0 auto;
-    font-weight: 700;
-  }
-
-  .control-stack {
-    display: grid;
-    gap: 12px;
-  }
-
-  .ollama-settings {
-    display: grid;
-    gap: 10px;
-  }
-
-  .action-button,
-  .icon-action,
-  .send-button {
-    border-radius: 8px;
-    box-shadow: none;
-    font-weight: 800;
-    letter-spacing: 0;
-    text-transform: none;
-  }
-
-  .action-button {
-    height: 40px;
-  }
-
-  .primary-action {
-    background: var(--button-primary-bg);
-    color: var(--button-primary-text);
-  }
-
-  .primary-action :deep(.v-btn__content),
-  .primary-action :deep(.v-icon) {
-    color: var(--button-primary-text);
-  }
-
-  .primary-action:hover {
-    background: var(--button-primary-hover);
-  }
-
-  .secondary-action {
-    background: var(--button-secondary-bg);
-    border: 1px solid var(--border);
-    color: var(--button-secondary-text);
-  }
-
-  .secondary-action :deep(.v-btn__content),
-  .secondary-action :deep(.v-icon) {
-    color: var(--button-secondary-text);
-  }
-
-  .secondary-action:hover {
-    background: var(--button-secondary-hover);
-  }
-
-  .icon-action {
-    background: var(--icon-button-bg);
-    color: var(--icon-button-text);
-    height: 38px;
-    min-width: 38px;
-    width: 38px;
-  }
-
-  .icon-action :deep(.v-btn__content),
-  .icon-action :deep(.v-icon) {
-    color: var(--icon-button-text);
-  }
-
-  .icon-action:hover {
-    background: var(--icon-button-hover);
-  }
-
-  .danger-action {
-    background: var(--danger-bg);
-    border: 1px solid var(--danger-border);
-    color: var(--danger-text);
-  }
-
-  .danger-action :deep(.v-btn__content),
-  .danger-action :deep(.v-icon) {
-    color: var(--danger-text);
-  }
-
-  .danger-action:hover {
-    background: var(--danger-bg-hover);
-  }
-
-  .confirm-dialog {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: var(--shadow);
-    color: var(--text-strong);
-    display: grid;
-    gap: 16px;
-    padding: 20px;
-  }
-
-  .confirm-dialog header {
-    align-items: center;
-    color: var(--danger-text);
-    display: flex;
-    gap: 10px;
-  }
-
-  .confirm-dialog p {
-    color: var(--text-muted);
-    line-height: 1.5;
-    margin: 0;
-  }
-
-  .dialog-actions {
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-  }
-
-  .dialog-button {
-    border-radius: 8px;
-    font-weight: 800;
-    letter-spacing: 0;
-    text-transform: none;
-  }
-
-  .dialog-button :deep(.v-btn__content),
-  .dialog-button :deep(.v-icon) {
-    color: var(--text-strong);
-  }
-
-  .danger-button {
-    background: #ef4444;
-    color: #ffffff;
-  }
-
-  .danger-button :deep(.v-btn__content),
-  .danger-button :deep(.v-icon) {
-    color: #ffffff;
-  }
-
-  .danger-button:hover {
-    background: #f87171;
-  }
-
-  .branch-header {
-    border-bottom: 1px solid var(--border-soft);
-    margin: -2px 0 0;
-    padding-bottom: 14px;
-  }
-
-  .branch-summary {
-    background: var(--surface-raised);
-    border: 1px solid var(--border-soft);
-    border-radius: 8px;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    overflow: hidden;
-  }
-
-  .branch-summary div {
-    display: grid;
-    gap: 2px;
-    padding: 12px;
-  }
-
-  .branch-summary div + div {
-    border-left: 1px solid var(--border-soft);
-  }
-
-  .branch-summary span {
-    color: var(--text-strong);
-    font-size: 1.25rem;
-    font-weight: 900;
-    line-height: 1;
-  }
-
-  .branch-summary small {
-    color: var(--text-subtle);
-    font-size: 0.72rem;
-    font-weight: 800;
-    text-transform: uppercase;
-  }
-
-  .branch-tree {
-    display: grid;
-    flex: 1;
-    gap: 8px;
-    align-content: start;
-    height: 100%;
-    max-height: 100%;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding-right: 2px;
-    transition: opacity 0.18s ease;
-  }
-
-  .branch-tree--loading {
-    opacity: 0.64;
-  }
-
-  .empty-tree,
-  .empty-context {
-    align-self: center;
-    color: var(--text-subtle);
-    font-weight: 800;
-    margin: 0;
-    text-align: center;
-  }
-
-  .empty-context {
-    justify-self: center;
-    padding: 24px;
-  }
-
-  .branch-node {
-    --node-depth: 0;
-    align-items: center;
-    background: var(--field-bg);
-    border: 1px solid var(--border-soft);
-    border-radius: 8px;
-    color: var(--text-strong);
-    cursor: pointer;
-    display: grid;
-    gap: 8px;
-    grid-template-columns: 4px minmax(0, 1fr) auto;
-    margin-left: calc(var(--node-depth) * 14px);
-    min-height: 58px;
-    padding: 9px 10px;
-    text-align: left;
-    width: calc(100% - (var(--node-depth) * 14px));
-  }
-
-  .branch-node:disabled {
-    cursor: progress;
-  }
-
-  .branch-node:hover:not(:disabled),
-  .branch-node--active {
-    border-color: var(--primary);
-    background: var(--primary-node-bg);
-  }
-
-  .branch-node--assistant:hover:not(:disabled),
-  .branch-node--assistant.branch-node--active {
-    border-color: var(--assistant-accent);
-    background: var(--assistant-node-bg);
-  }
-
-  .branch-node--exchange:hover:not(:disabled),
-  .branch-node--exchange.branch-node--active {
-    border-color: var(--exchange-accent);
-    background: var(--exchange-node-bg);
-  }
-
-  .branch-node__rail {
-    align-self: stretch;
-    background: var(--primary);
-    border-radius: 999px;
-  }
-
-  .branch-node--assistant .branch-node__rail {
-    background: var(--assistant-accent);
-  }
-
-  .branch-node--exchange .branch-node__rail {
-    background: var(--exchange-accent);
-  }
-
-  .branch-node__content {
-    display: grid;
-    gap: 3px;
-    min-width: 0;
-  }
-
-  .branch-node__meta {
-    align-items: center;
-    color: var(--text-subtle);
-    display: flex;
-    gap: 6px;
-    font-size: 0.72rem;
-    font-weight: 900;
-    text-transform: uppercase;
-  }
-
-  .branch-node__preview {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .branch-node__children {
-    color: var(--text-subtle);
-  }
-
-  .message-list {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    height: 100%;
-    max-height: 100%;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 22px;
-  }
-
-  .message-row {
-    display: flex;
-  }
-
-  .message-row--user {
-    justify-content: flex-end;
-  }
-
-  .message-row--assistant {
-    justify-content: flex-start;
-  }
-
-  .message-bubble {
-    border-radius: 8px;
-    max-width: min(760px, 86%);
-    padding: 14px 16px;
-  }
-
-  .message-row--user .message-bubble {
-    background: var(--user-bubble-bg);
-    color: var(--user-bubble-text);
-  }
-
-  .message-row--assistant .message-bubble {
-    background: var(--assistant-bubble-bg);
-    color: var(--assistant-bubble-text);
-  }
-
-  .message-bubble span {
-    align-items: center;
-    display: flex;
-    font-size: 0.72rem;
-    font-weight: 900;
-    gap: 6px;
-    margin-bottom: 6px;
-    opacity: 0.8;
-    text-transform: uppercase;
-  }
-
-  .message-bubble small {
-    font-size: 0.7rem;
-    font-weight: 900;
-  }
-
-  .message-bubble p {
-    margin: 0;
-    white-space: pre-wrap;
-  }
-
-  .error-alert {
-    margin: 0 20px 14px;
-  }
-
-  .composer {
-    align-items: end;
-    border-top: 1px solid var(--border-soft);
-    display: grid;
-    gap: 12px;
-    grid-template-columns: minmax(0, 1fr) 48px;
-    padding: 14px 20px 18px;
-  }
-
-  .composer-input {
-    min-width: 0;
-  }
-
-  .send-button {
-    height: 48px;
-    min-width: 48px;
-    width: 48px;
-  }
-
   @media (max-width: 1180px) {
     .workspace-shell {
       grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
@@ -1357,15 +543,6 @@
       height: 100%;
       min-height: 0;
       overflow: hidden;
-    }
-
-    .branch-panel {
-      grid-column: 1 / -1;
-      min-height: 0;
-    }
-
-    .branch-tree {
-      max-height: none;
     }
   }
 
@@ -1380,45 +557,6 @@
       height: 100%;
       min-height: 0;
       overflow: hidden;
-    }
-
-    .model-panel,
-    .branch-panel {
-      overflow: hidden;
-      padding: 16px;
-    }
-
-    .model-panel {
-      overflow-y: auto;
-      overscroll-behavior: contain;
-    }
-
-    .conversation-panel {
-      min-height: 0;
-      overflow: hidden;
-    }
-
-    .conversation-header {
-      align-items: flex-start;
-      flex-direction: column;
-      padding: 16px;
-    }
-
-    .conversation-status {
-      flex-wrap: wrap;
-    }
-
-    .message-list {
-      padding: 16px;
-    }
-
-    .message-bubble {
-      max-width: 94%;
-    }
-
-    .composer {
-      grid-template-columns: 1fr 48px;
-      padding: 12px 16px 16px;
     }
   }
 </style>
