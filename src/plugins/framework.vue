@@ -83,7 +83,7 @@
             data: {
                 id: session.value
             }
-        }).done((response) => {
+        }).done((response: any) => {
             // response = JSON.parse(response);
             if(!response['ok']) {
                 localStorage.removeItem('session');

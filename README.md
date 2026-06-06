@@ -1,81 +1,41 @@
-# git-ai
+# Git-like AI Chat 前端
 
-Scaffolded with Vuetify CLI.
+這是專案的 Vue 3 前端，使用 Vite、TypeScript 與 Vuetify。目前首頁已改成簡易 LLM 對話工作區，讓使用者可以選擇 Provider、Model、設定 System Prompt，並送出訊息與模型對話。
 
-## ❗️ Documentation
+## 主要架構
 
-- Primary docs: https://vuetifyjs.com/
-- Getting started guide: https://vuetifyjs.com/en/getting-started/installation/
-- Community support: https://community.vuetifyjs.com/
-- Issue tracker: https://issues.vuetifyjs.com/
+- `src/main.ts`：Vue 應用程式入口，掛載插件。
+- `src/router/index.ts`：路由設定，目前首頁載入 `src/pages/index.vue`。
+- `src/pages/index.vue`：主要聊天頁面，包含模型選擇、訊息列表、輸入框與送出流程。
+- `src/plugins/vuetify.ts`：Vuetify 設定。
+- `vite.config.mts`：Vite 設定，已加入 `/api` proxy 到後端 `http://localhost:5000`。
 
-## 🧱 Stack
+## API 串接
 
-- Framework: Vue 3 + Vite
-- UI Library: Vuetify
-- Language: TypeScript
-- Package manager: npm
+前端會呼叫：
 
-## 🧭 Start Here
+- `GET /api/models`：取得可用 Provider 與 Model 清單。
+- `POST /api/chat`：送出對話內容。
 
-- Main entry: `src/main.ts`
-- Main app component: `src/App.vue`
-- Main styles: `src/styles/`
-- Plugin setup: `src/plugins/`
+`POST /api/chat` payload 目前包含：
 
-## 📁 Project Structure
-
-- `src/main.ts` — application entry point
-- `src/App.vue` — root component
-- `src/components/` — reusable Vue components
-- `src/plugins/` — plugin registration and setup
-- `src/styles/` — global styles and theme settings
-- `public/` — static public files
-
-## ✨ Enabled Features
-
-- ESLint
-- Vuetify MCP
-- Vue Router
-
-## 💿 Install
-
-Use your selected package manager (npm) to install dependencies:
-
-```bash
-npm install
+```json
+{
+  "provider": "ollama",
+  "model": "llama3.1",
+  "messages": [
+    { "role": "system", "content": "..." },
+    { "role": "user", "content": "..." }
+  ]
+}
 ```
 
-## 🚀 Quick Start
+## 開發指令
 
 ```bash
 npm install
 npm run dev
-```
-
-## 🏗️ Build
-
-```bash
 npm run build
 ```
 
-## 🧪 Available Scripts
-
-- `npm run dev`
-- `npm run build`
-- `npm run preview`
-- `npm run build-only`
-- `npm run type-check`
-- `npm run lint`
-- `npm run lint:fix`
-- `npm run mcp`
-- `npm run mcp:revert`
-
-## 💪 Support Vuetify Development
-
-This project uses Vuetify - an MIT licensed Open Source project. We are glad to welcome contributors and any support for ongoing development:
-
-- Contribute to Vuetify and ecosystem projects: https://github.com/vuetifyjs
-- Request enterprise support: https://support.vuetifyjs.com/
-- Sponsor on GitHub: https://github.com/sponsors/vuetifyjs
-- Support on Open Collective: https://opencollective.com/vuetify
+開發伺服器預設為 `http://127.0.0.1:3000/`。
