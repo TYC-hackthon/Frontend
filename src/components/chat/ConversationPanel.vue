@@ -39,6 +39,7 @@
         <span class="empty-context__icon">
           <v-icon icon="mdi-vector-polyline-plus" size="28" />
         </span>
+
         <span class="empty-context__title">No active context</span>
         <span class="empty-context__copy">Start from this root or select a branch node.</span>
       </section>
@@ -51,10 +52,11 @@
       >
         <article class="message-bubble">
           <span>
-            {{ message.role === 'user' ? 'You' : 'Assistant' }}
+            {{ message.role === "user" ? "You" : "Assistant" }}
             <small v-if="message.nodeId">#{{ message.nodeId }}</small>
           </span>
-          <p>{{ message.content }}</p>
+
+          <MessageRenderer :content="message.content" />
         </article>
       </div>
 
@@ -92,7 +94,7 @@
         @keydown.enter.exact.prevent="emit('send')"
       />
 
-      <v-tooltip text="Send" location="top">
+      <v-tooltip location="top" text="Send">
         <template #activator="{ props: tooltipProps }">
           <v-btn
             v-bind="tooltipProps"
@@ -111,8 +113,9 @@
 </template>
 
 <script setup lang="ts">
-  import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
   import type { ChatMessage } from '@/types/chat'
+  import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+  import MessageRenderer from '@/components/chat/MessageRenderer.vue'
 
   const props = defineProps<{
     activeModelLabel: string
@@ -134,17 +137,18 @@
   const messageListRef = ref<HTMLElement | null>(null)
   const scrollCorrectionTimers: number[] = []
 
-  const scrollOnNextFrame = () =>
-    new Promise<void>(resolve => {
+  function scrollOnNextFrame () {
+    return new Promise<void>(resolve => {
       window.requestAnimationFrame(() => resolve())
     })
+  }
 
-  const pinMessageListToBottom = () => {
+  function pinMessageListToBottom () {
     if (!messageListRef.value) return
     messageListRef.value.scrollTop = messageListRef.value.scrollHeight
   }
 
-  const scrollToBottom = async () => {
+  async function scrollToBottom () {
     await nextTick()
     pinMessageListToBottom()
     await scrollOnNextFrame()
@@ -152,7 +156,7 @@
     await scrollOnNextFrame()
     pinMessageListToBottom()
 
-    scrollCorrectionTimers.splice(0).forEach(timerId => window.clearTimeout(timerId))
+    for (const timerId of scrollCorrectionTimers.splice(0)) window.clearTimeout(timerId)
     scrollCorrectionTimers.push(
       window.setTimeout(pinMessageListToBottom, 80),
       window.setTimeout(pinMessageListToBottom, 220),
@@ -168,7 +172,7 @@
   )
 
   onBeforeUnmount(() => {
-    scrollCorrectionTimers.splice(0).forEach(timerId => window.clearTimeout(timerId))
+    for (const timerId of scrollCorrectionTimers.splice(0)) window.clearTimeout(timerId)
   })
 
   defineExpose({
@@ -180,8 +184,7 @@
   .workspace-panel {
     backdrop-filter: blur(16px);
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 26%),
-      var(--surface);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 26%), var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
     box-shadow: var(--shadow);
@@ -193,7 +196,13 @@
   }
 
   .workspace-panel::before {
-    background: linear-gradient(120deg, transparent 8%, rgba(45, 212, 191, 0.56), rgba(129, 140, 248, 0.28), transparent 52%);
+    background: linear-gradient(
+      120deg,
+      transparent 8%,
+      rgba(45, 212, 191, 0.56),
+      rgba(129, 140, 248, 0.28),
+      transparent 52%
+    );
     content: "";
     height: 2px;
     left: -38%;
@@ -216,8 +225,7 @@
   .conversation-header {
     align-items: center;
     background:
-      linear-gradient(90deg, rgba(20, 184, 166, 0.08), transparent 38%),
-      rgba(2, 6, 23, 0.18);
+      linear-gradient(90deg, rgba(20, 184, 166, 0.08), transparent 38%), rgba(2, 6, 23, 0.18);
     border-bottom: 1px solid var(--border-soft);
     display: flex;
     gap: 14px;
@@ -308,16 +316,14 @@
 
   .message-row--user .message-bubble {
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent),
-      var(--user-bubble-bg);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent), var(--user-bubble-bg);
     border-color: rgba(94, 234, 212, 0.24);
     color: var(--user-bubble-text);
   }
 
   .message-row--assistant .message-bubble {
     background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent),
-      var(--assistant-bubble-bg);
+      linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent), var(--assistant-bubble-bg);
     border-color: rgba(129, 140, 248, 0.24);
     color: var(--assistant-bubble-text);
   }
@@ -357,13 +363,13 @@
     font-weight: 900;
   }
 
-  .message-bubble p {
+  <<<<<<< HEAD .message-bubble p {
     line-height: 1.62;
     margin: 0;
     white-space: pre-wrap;
   }
 
-  .empty-context {
+  =======>>>>>>>c501dd9b2a6ce35763c32a1f0df1e1062363ec9f .empty-context {
     align-self: center;
     background: rgba(15, 23, 42, 0.62);
     border: 1px solid var(--border-soft);
@@ -408,8 +414,7 @@
   .composer {
     align-items: end;
     background:
-      linear-gradient(180deg, rgba(15, 23, 42, 0.2), rgba(2, 6, 23, 0.24)),
-      var(--surface);
+      linear-gradient(180deg, rgba(15, 23, 42, 0.2), rgba(2, 6, 23, 0.24)), var(--surface);
     border-top: 1px solid var(--border-soft);
     display: grid;
     gap: 10px;
