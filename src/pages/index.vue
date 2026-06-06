@@ -216,6 +216,21 @@
                 />
               </template>
             </v-tooltip>
+
+            <v-tooltip text="Clear database" location="bottom">
+              <template #activator="{ props }">
+                <v-btn
+                  v-bind="props"
+                  aria-label="Clear database"
+                  class="icon-action danger-action"
+                  :disabled="isClearingDatabase || treeNodes.length === 0"
+                  icon="mdi-trash-can-outline"
+                  :loading="isClearingDatabase"
+                  variant="flat"
+                  @click="isClearDialogOpen = true"
+                />
+              </template>
+            </v-tooltip>
           </div>
         </header>
 
@@ -242,6 +257,7 @@
             :class="{
               'branch-node--active': item.node.id === currentNodeId,
               'branch-node--assistant': item.node.role === 'assistant',
+              'branch-node--exchange': item.node.role === 'exchange',
             }"
             :disabled="isLoadingContext"
             :style="{ '--node-depth': item.depth }"
@@ -251,7 +267,7 @@
             <span class="branch-node__rail" />
             <span class="branch-node__content">
               <span class="branch-node__meta">
-                <v-icon :icon="item.node.role === 'user' ? 'mdi-account' : 'mdi-robot'" size="16" />
+                <v-icon :icon="nodeIcon(item.node)" size="16" />
                 <span>{{ item.node.role }}</span>
                 <span>#{{ item.node.id }}</span>
               </span>
@@ -266,6 +282,39 @@
           </button>
         </div>
       </aside>
+
+      <v-dialog v-model="isClearDialogOpen" max-width="420">
+        <section class="confirm-dialog">
+          <header>
+            <v-icon icon="mdi-trash-can-outline" size="22" />
+            <h2>Clear database</h2>
+          </header>
+
+          <p>
+            This removes every saved conversation node from the backend database.
+          </p>
+
+          <div class="dialog-actions">
+            <v-btn
+              class="dialog-button"
+              variant="text"
+              @click="isClearDialogOpen = false"
+            >
+              Cancel
+            </v-btn>
+
+            <v-btn
+              class="dialog-button danger-button"
+              :loading="isClearingDatabase"
+              prepend-icon="mdi-trash-can-outline"
+              variant="flat"
+              @click="clearDatabase"
+            >
+              Clear
+            </v-btn>
+          </div>
+        </section>
+      </v-dialog>
     </section>
   </v-container>
 </template>
@@ -282,6 +331,7 @@
   }
 
   type ConversationRole = 'user' | 'assistant'
+  type NodeRole = ConversationRole | 'exchange'
 
   type ChatMessage = {
     id: string
@@ -295,10 +345,20 @@
   type MessageNode = {
     id: number
     parent_id: number | null
-    role: ConversationRole
+    role: NodeRole
     content: string
+    user_content?: string | null
+    assistant_content?: string | null
     created_at: string | null
     children: number[]
+  }
+
+  type ContextMessage = {
+    role: ConversationRole
+    content: string
+    node_id?: number
+    parent_id?: number | null
+    created_at?: string | null
   }
 
   type TreePayload = {
@@ -309,10 +369,7 @@
   type ContextPayload = {
     node_id: number
     nodes: MessageNode[]
-    messages: Array<{
-      role: string
-      content: string
-    }>
+    messages: ContextMessage[]
   }
 
   type ChatResponsePayload = {
@@ -320,6 +377,7 @@
     content: string
     user: MessageNode | null
     assistant: MessageNode | null
+    exchange?: MessageNode | null
     node: MessageNode | null
     current_node_id?: number | null
     currentNodeId?: number | null
@@ -370,6 +428,8 @@
   const isDetectingModels = ref(false)
   const isLoadingTree = ref(false)
   const isLoadingContext = ref(false)
+  const isClearingDatabase = ref(false)
+  const isClearDialogOpen = ref(false)
   const errorMessage = ref('')
   const messageListRef = ref<HTMLElement | null>(null)
   let nextLocalMessageId = 1
@@ -399,7 +459,7 @@
 
   const currentNodeLabel = computed(() => {
     if (!currentNode.value) return 'New root'
-    return `${currentNode.value.role} #${currentNode.value.id}`
+    return `${currentNode.value.role === 'exchange' ? 'Exchange' : currentNode.value.role} #${currentNode.value.id}`
   })
 
   const contextSummary = computed(() =>
@@ -446,9 +506,18 @@
   )
 
   const nodePreview = (node: MessageNode) => {
-    const compact = node.content.replace(/\s+/g, ' ').trim()
-    if (!compact) return '(empty)'
-    return compact.length > 72 ? `${compact.slice(0, 72)}...` : compact
+    const compact = [node.user_content, node.assistant_content]
+      .filter(Boolean)
+      .join(' / ')
+      .trim() || node.content
+    const normalized = compact.replace(/\s+/g, ' ').trim()
+    if (!normalized) return '(empty)'
+    return normalized.length > 72 ? `${normalized.slice(0, 72)}...` : normalized
+  }
+
+  const nodeIcon = (node: MessageNode) => {
+    if (node.role === 'exchange') return 'mdi-swap-horizontal'
+    return node.role === 'user' ? 'mdi-account' : 'mdi-robot'
   }
 
   const assertOk = async <T>(response: Response, fallback: string): Promise<T> => {
@@ -462,13 +531,13 @@
     children: Array.isArray(node.children) ? node.children : [],
   })
 
-  const messageFromNode = (node: MessageNode): ChatMessage => ({
-    id: `node-${node.id}`,
-    role: node.role,
-    content: node.content,
-    nodeId: node.id,
-    parentId: node.parent_id,
-    createdAt: node.created_at,
+  const messageFromContextMessage = (message: ContextMessage, index: number): ChatMessage => ({
+    id: `node-${message.node_id ?? 'local'}-${message.role}-${index}`,
+    role: message.role,
+    content: message.content,
+    nodeId: message.node_id,
+    parentId: message.parent_id,
+    createdAt: message.created_at,
   })
 
   const scrollToBottom = async () => {
@@ -513,7 +582,7 @@
     try {
       const response = await fetch(`/api/context/${nodeId}`)
       const data = await assertOk<ContextPayload>(response, 'Unable to load node context.')
-      messages.value = data.nodes.map(normalizeTreeNode).map(messageFromNode)
+      messages.value = data.messages.map(messageFromContextMessage)
       currentNodeId.value = data.node_id
       await scrollToBottom()
     } catch (error) {
@@ -534,6 +603,29 @@
     draft.value = ''
     errorMessage.value = ''
     await scrollToBottom()
+  }
+
+  const clearDatabase = async () => {
+    if (isClearingDatabase.value) return
+
+    isClearingDatabase.value = true
+    errorMessage.value = ''
+
+    try {
+      const response = await fetch('/api/nodes', { method: 'DELETE' })
+      await assertOk<{ deleted: number }>(response, 'Unable to clear database.')
+      treeNodes.value = []
+      treeRoots.value = []
+      currentNodeId.value = null
+      messages.value = []
+      draft.value = ''
+      isClearDialogOpen.value = false
+      await scrollToBottom()
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : 'Unable to clear database.'
+    } finally {
+      isClearingDatabase.value = false
+    }
   }
 
   const detectOllamaModels = async (silent = false) => {
@@ -642,6 +734,12 @@
     overflow: hidden;
   }
 
+  :global(.v-main) {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   :global(body),
   :global(.v-application) {
     background: #0b1120;
@@ -677,6 +775,8 @@
     --assistant-bubble-bg: #1e293b;
     --assistant-bubble-text: #f8fafc;
     --assistant-node-bg: rgba(129, 140, 248, 0.16);
+    --exchange-accent: #f59e0b;
+    --exchange-node-bg: rgba(245, 158, 11, 0.14);
     --border: rgba(148, 163, 184, 0.24);
     --border-soft: rgba(148, 163, 184, 0.16);
     --button-primary-bg: #2dd4bf;
@@ -692,6 +792,10 @@
     --icon-button-bg: rgba(148, 163, 184, 0.14);
     --icon-button-hover: rgba(148, 163, 184, 0.24);
     --icon-button-text: #f8fafc;
+    --danger-bg: rgba(248, 113, 113, 0.14);
+    --danger-bg-hover: rgba(248, 113, 113, 0.24);
+    --danger-border: rgba(248, 113, 113, 0.34);
+    --danger-text: #fecaca;
     --primary: #14b8a6;
     --primary-node-bg: rgba(20, 184, 166, 0.16);
     --shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
@@ -731,7 +835,9 @@
     background: var(--surface);
     box-shadow: var(--shadow);
     color: var(--text-strong);
+    min-height: 0;
     min-width: 0;
+    overflow: hidden;
   }
 
   :deep(.v-field) {
@@ -794,6 +900,7 @@
 
   .model-panel {
     overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .conversation-panel {
@@ -935,6 +1042,77 @@
     background: var(--icon-button-hover);
   }
 
+  .danger-action {
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    color: var(--danger-text);
+  }
+
+  .danger-action :deep(.v-btn__content),
+  .danger-action :deep(.v-icon) {
+    color: var(--danger-text);
+  }
+
+  .danger-action:hover {
+    background: var(--danger-bg-hover);
+  }
+
+  .confirm-dialog {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    color: var(--text-strong);
+    display: grid;
+    gap: 16px;
+    padding: 20px;
+  }
+
+  .confirm-dialog header {
+    align-items: center;
+    color: var(--danger-text);
+    display: flex;
+    gap: 10px;
+  }
+
+  .confirm-dialog p {
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .dialog-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+
+  .dialog-button {
+    border-radius: 8px;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .dialog-button :deep(.v-btn__content),
+  .dialog-button :deep(.v-icon) {
+    color: var(--text-strong);
+  }
+
+  .danger-button {
+    background: #ef4444;
+    color: #ffffff;
+  }
+
+  .danger-button :deep(.v-btn__content),
+  .danger-button :deep(.v-icon) {
+    color: #ffffff;
+  }
+
+  .danger-button:hover {
+    background: #f87171;
+  }
+
   .branch-header {
     border-bottom: 1px solid var(--border-soft);
     margin: -2px 0 0;
@@ -978,8 +1156,13 @@
     display: grid;
     flex: 1;
     gap: 8px;
+    align-content: start;
+    height: 100%;
+    max-height: 100%;
     min-height: 0;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding-right: 2px;
     transition: opacity 0.18s ease;
   }
@@ -1036,6 +1219,12 @@
     background: var(--assistant-node-bg);
   }
 
+  .branch-node--exchange:hover:not(:disabled),
+  .branch-node--exchange.branch-node--active {
+    border-color: var(--exchange-accent);
+    background: var(--exchange-node-bg);
+  }
+
   .branch-node__rail {
     align-self: stretch;
     background: var(--primary);
@@ -1044,6 +1233,10 @@
 
   .branch-node--assistant .branch-node__rail {
     background: var(--assistant-accent);
+  }
+
+  .branch-node--exchange .branch-node__rail {
+    background: var(--exchange-accent);
   }
 
   .branch-node__content {
@@ -1075,9 +1268,13 @@
   .message-list {
     display: flex;
     flex-direction: column;
-    min-height: 0;
     gap: 14px;
+    height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    overflow-x: hidden;
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 22px;
   }
 
@@ -1159,6 +1356,7 @@
       grid-template-rows: minmax(0, 1fr) minmax(190px, 32%);
       height: 100%;
       min-height: 0;
+      overflow: hidden;
     }
 
     .branch-panel {
@@ -1181,6 +1379,7 @@
       grid-template-rows: minmax(150px, 25%) minmax(0, 1fr) minmax(150px, 24%);
       height: 100%;
       min-height: 0;
+      overflow: hidden;
     }
 
     .model-panel,
@@ -1191,10 +1390,12 @@
 
     .model-panel {
       overflow-y: auto;
+      overscroll-behavior: contain;
     }
 
     .conversation-panel {
       min-height: 0;
+      overflow: hidden;
     }
 
     .conversation-header {

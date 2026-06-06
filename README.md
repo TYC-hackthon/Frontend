@@ -18,6 +18,7 @@
 - `GET /api/ollama/models`：依照 Ollama Base URL 偵測本機已拉取的模型。
 - `GET /api/tree`：取得所有對話節點、root 節點與 children id。
 - `GET /api/context/<node_id>`：取得指定節點往根節點回溯後的線性上下文。
+- `DELETE /api/nodes`：清空所有後端對話節點。
 - `POST /api/chat`：送出目前分支下的新訊息。
 
 `POST /api/chat` payload 目前包含：
@@ -33,7 +34,7 @@
 }
 ```
 
-`parent_id` 來自目前選取的 `currentNodeId`；若為 `null`，代表從新的 root 對話開始。送出成功後，前端會使用回應中的 `current_node_id` / `currentNodeId` 載入 `/api/context/<node_id>`，以確認畫面內容與後端重組上下文一致。
+`parent_id` 來自目前選取的 `currentNodeId`；若為 `null`，代表從新的 root 對話開始。送出成功後，前端會使用回應中的 `current_node_id` / `currentNodeId` 載入 `/api/context/<node_id>`，以確認畫面內容與後端重組上下文一致。每個後端 node 代表一輪 user/assistant exchange，前端會在訊息列表中展開成兩則聊天泡泡。
 
 ## 開發指令
 
