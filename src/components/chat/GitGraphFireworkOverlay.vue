@@ -11,7 +11,7 @@
         <svg
           class="graph-firework__lines"
           :viewBox="`0 0 ${stageWidth} ${stageHeight}`"
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="none"
           aria-hidden="true"
         >
           <line
