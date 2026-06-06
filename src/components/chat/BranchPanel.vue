@@ -6,7 +6,7 @@
         <h2>{{ currentNodeLabel }}</h2>
       </div>
 
-      <div class="branch-tools">
+      <div v-if="showHeaderActions" class="branch-tools">
         <v-tooltip text="New root" location="bottom">
           <template #activator="{ props: tooltipProps }">
             <v-btn
@@ -52,7 +52,7 @@
       </div>
     </header>
 
-    <div class="branch-summary">
+    <div v-if="showSummary" class="branch-summary">
       <div>
         <span>{{ treeRoots.length }}</span>
         <small>roots</small>
@@ -64,7 +64,7 @@
     </div>
 
     <div
-      v-if="treeRootOptions.length > 0 || isNewRootDraftActive"
+      v-if="showRootSwitcher && (treeRootOptions.length > 0 || isNewRootDraftActive)"
       aria-label="Root trees"
       class="root-switcher"
       role="tablist"
@@ -161,7 +161,7 @@
 <script setup lang="ts">
   import type { FlattenedNode, GraphLane, MessageNode, RootTreeOption } from '@/types/chat'
 
-  defineProps<{
+  withDefaults(defineProps<{
     currentNodeId: number | null
     currentNodeLabel: string
     flattenedTreeNodes: FlattenedNode[]
@@ -169,10 +169,17 @@
     isLoadingContext: boolean
     isLoadingTree: boolean
     isNewRootDraftActive: boolean
+    showHeaderActions?: boolean
+    showRootSwitcher?: boolean
+    showSummary?: boolean
     treeRootOptions: RootTreeOption[]
     treeNodes: MessageNode[]
     treeRoots: number[]
-  }>()
+  }>(), {
+    showHeaderActions: true,
+    showRootSwitcher: true,
+    showSummary: true,
+  })
 
   const emit = defineEmits<{
     clearRequested: []
@@ -466,7 +473,7 @@
     gap: 10px;
     grid-template-columns: auto minmax(0, 1fr) 18px;
     min-height: 54px;
-    min-width: 260px;
+    min-width: 220px;
     padding: 0 8px 0 2px;
     text-align: left;
     width: 100%;
@@ -605,7 +612,7 @@
     box-shadow: 0 0 0 3px var(--surface), 0 0 0 6px var(--node-active-ring);
   }
 
-  @media (max-width: 1180px) {
+  @media (max-width: 1420px) {
     .branch-panel {
       grid-column: 1 / -1;
       min-height: 0;

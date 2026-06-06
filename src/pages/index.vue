@@ -1,19 +1,22 @@
 <template>
-  <v-container class="chat-page" fluid>
-    <div v-if="isCheckingSession" class="session-shell">
+  <div v-if="isCheckingSession" class="chat-page auth-page">
+    <div class="session-shell">
       <v-progress-circular indeterminate size="42" />
     </div>
+  </div>
 
+  <div v-else-if="!currentUser" class="chat-page auth-page">
     <AuthPanel
-      v-else-if="!currentUser"
       :error-message="authErrorMessage"
       :is-submitting="isAuthSubmitting"
       :needs-setup="needsSetup"
       @login="login"
       @setup="setupAdmin"
     />
+  </div>
 
-    <section v-else class="workspace-shell">
+  <Layout v-else title="Git-like AI Chat" :show-account="false">
+    <template #topbar>
       <ModelSettingsPanel
         v-model:ollama-base-url="ollamaBaseUrl"
         v-model:selected-model="selectedModel"
@@ -26,65 +29,221 @@
         :is-ready="isReady"
         :model-options="modelOptions"
         :providers="providers"
+        variant="nav"
         @detect-models="detectOllamaModels"
         @logout="logout"
         @open-admin="openAdminPanel"
       />
+    </template>
 
-      <ConversationPanel
-        ref="conversationPanelRef"
-        v-model:draft="draft"
-        :active-model-label="activeModelLabel"
-        :can-send="canSend"
-        :context-summary="contextSummary"
-        :error-message="errorMessage"
-        :is-loading-context="isLoadingContext"
-        :is-sending="isSending"
-        :messages="messages"
-        :node-count="treeNodes.length"
-        @dismiss-error="errorMessage = ''"
-        @send="sendMessage"
-      />
+    <template #sidebar>
+      <section class="root-history-panel">
+        <header class="root-history-header">
+          <div>
+            <p class="eyebrow">Conversations</p>
+            <h2>Root history</h2>
+          </div>
 
-      <BranchPanel
-        :current-node-id="currentNodeId"
-        :current-node-label="currentNodeLabel"
-        :flattened-tree-nodes="flattenedTreeNodes"
-        :is-clearing-database="isClearingDatabase"
-        :is-loading-context="isLoadingContext"
-        :is-loading-tree="isLoadingTree"
-        :is-new-root-draft-active="isNewRootDraftActive"
-        :tree-root-options="treeRootOptions"
-        :tree-nodes="treeNodes"
-        :tree-roots="treeRoots"
-        @clear-requested="isClearDialogOpen = true"
-        @refresh-tree="loadTree"
-        @select-node="selectNode"
-        @select-root-tree="selectRootTree"
-        @start-root="startRootConversation"
-      />
+          <div class="root-history-tools">
+            <v-tooltip text="New root" location="bottom">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  aria-label="New root"
+                  class="root-history-action"
+                  icon="mdi-source-branch-plus"
+                  variant="flat"
+                  @click="startRootConversation"
+                />
+              </template>
+            </v-tooltip>
 
-      <ClearDatabaseDialog
-        v-model="isClearDialogOpen"
-        :is-clearing-database="isClearingDatabase"
-        @confirm="clearDatabase"
-      />
+            <v-tooltip text="Refresh tree" location="bottom">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  aria-label="Refresh tree"
+                  class="root-history-action"
+                  :disabled="isLoadingTree"
+                  icon="mdi-refresh"
+                  :loading="isLoadingTree"
+                  variant="flat"
+                  @click="loadTree"
+                />
+              </template>
+            </v-tooltip>
 
-      <AdminPanel
-        v-if="currentUser.is_admin"
-        v-model="isAdminPanelOpen"
-        :error-message="adminErrorMessage"
-        :is-loading="isLoadingAdminUsers"
-        :is-saving="isSavingAdmin"
-        :users="adminUsers"
-        @clear-user-nodes="clearUserNodes"
-        @create-user="createUser"
-        @dismiss-error="adminErrorMessage = ''"
-        @refresh="loadAdminUsers"
-        @update-user="updateUser"
-      />
-    </section>
-  </v-container>
+            <v-tooltip text="Clear database" location="bottom">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  aria-label="Clear database"
+                  class="root-history-action root-history-action--danger"
+                  :disabled="isClearingDatabase || treeNodes.length === 0"
+                  icon="mdi-trash-can-outline"
+                  :loading="isClearingDatabase"
+                  variant="flat"
+                  @click="isClearDialogOpen = true"
+                />
+              </template>
+            </v-tooltip>
+          </div>
+        </header>
+
+        <div class="root-history-summary">
+          <div>
+            <span>{{ treeRoots.length }}</span>
+            <small>roots</small>
+          </div>
+          <div>
+            <span>{{ treeNodes.length }}</span>
+            <small>nodes</small>
+          </div>
+        </div>
+
+        <div
+          aria-label="Root conversations"
+          class="root-history-list"
+          role="tablist"
+        >
+          <button
+            aria-label="Start a new root conversation"
+            :aria-selected="isNewRootDraftActive"
+            class="root-history-item root-history-item--new"
+            :class="{ 'root-history-item--active': isNewRootDraftActive }"
+            :disabled="isLoadingContext"
+            role="tab"
+            type="button"
+            @click="startRootConversation"
+          >
+            <span class="root-history-item__icon">
+              <v-icon icon="mdi-plus" size="18" />
+            </span>
+            <span class="root-history-item__content">
+              <span class="root-history-item__label">New root</span>
+              <span class="root-history-item__preview">Start separate context</span>
+            </span>
+          </button>
+
+          <p v-if="treeRootOptions.length === 0" class="root-history-empty">
+            No saved roots
+          </p>
+
+          <button
+            v-for="option in treeRootOptions"
+            :key="option.id"
+            :aria-label="`Open ${option.label}`"
+            :aria-selected="option.isCurrent"
+            class="root-history-item"
+            :class="{ 'root-history-item--active': option.isCurrent }"
+            :disabled="isLoadingContext"
+            role="tab"
+            type="button"
+            @click="selectRootTree(option.id)"
+          >
+            <span class="root-history-item__icon">
+              <v-icon icon="mdi-chat-outline" size="18" />
+            </span>
+            <span class="root-history-item__content">
+              <span class="root-history-item__label">{{ option.label }}</span>
+              <span class="root-history-item__preview">{{ option.preview }}</span>
+            </span>
+          </button>
+        </div>
+      </section>
+    </template>
+
+    <v-container class="chat-page" fluid>
+      <section
+        class="workspace-shell"
+        :class="{ 'workspace-shell--branch-collapsed': isBranchPanelCollapsed }"
+      >
+        <ConversationPanel
+          ref="conversationPanelRef"
+          v-model:draft="draft"
+          :active-model-label="activeModelLabel"
+          :can-send="canSend"
+          :context-summary="contextSummary"
+          :error-message="errorMessage"
+          :is-loading-context="isLoadingContext"
+          :is-sending="isSending"
+          :messages="messages"
+          :node-count="treeNodes.length"
+          @dismiss-error="errorMessage = ''"
+          @send="sendMessage"
+        />
+
+        <div v-if="!isBranchPanelCollapsed" class="branch-column">
+          <v-tooltip text="Hide branch panel" location="bottom">
+            <template #activator="{ props: tooltipProps }">
+              <v-btn
+                v-bind="tooltipProps"
+                aria-label="Hide branch panel"
+                class="branch-panel-toggle branch-panel-toggle--collapse"
+                icon="mdi-chevron-right"
+                variant="flat"
+                @click="isBranchPanelCollapsed = true"
+              />
+            </template>
+          </v-tooltip>
+
+          <BranchPanel
+            :current-node-id="currentNodeId"
+            :current-node-label="currentNodeLabel"
+            :flattened-tree-nodes="flattenedTreeNodes"
+            :is-clearing-database="isClearingDatabase"
+            :is-loading-context="isLoadingContext"
+            :is-loading-tree="isLoadingTree"
+            :is-new-root-draft-active="isNewRootDraftActive"
+            :show-header-actions="false"
+            :show-root-switcher="false"
+            :show-summary="false"
+            :tree-root-options="treeRootOptions"
+            :tree-nodes="treeNodes"
+            :tree-roots="treeRoots"
+            @clear-requested="isClearDialogOpen = true"
+            @refresh-tree="loadTree"
+            @select-node="selectNode"
+            @select-root-tree="selectRootTree"
+            @start-root="startRootConversation"
+          />
+        </div>
+
+        <v-tooltip v-else text="Show branch panel" location="left">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              aria-label="Show branch panel"
+              class="branch-panel-toggle branch-panel-toggle--expand"
+              icon="mdi-source-branch"
+              variant="flat"
+              @click="isBranchPanelCollapsed = false"
+            />
+          </template>
+        </v-tooltip>
+
+        <ClearDatabaseDialog
+          v-model="isClearDialogOpen"
+          :is-clearing-database="isClearingDatabase"
+          @confirm="clearDatabase"
+        />
+
+        <AdminPanel
+          v-if="currentUser.is_admin"
+          v-model="isAdminPanelOpen"
+          :error-message="adminErrorMessage"
+          :is-loading="isLoadingAdminUsers"
+          :is-saving="isSavingAdmin"
+          :users="adminUsers"
+          @clear-user-nodes="clearUserNodes"
+          @create-user="createUser"
+          @dismiss-error="adminErrorMessage = ''"
+          @refresh="loadAdminUsers"
+          @update-user="updateUser"
+        />
+      </section>
+    </v-container>
+  </Layout>
 </template>
 
 <script lang="ts" setup>
@@ -95,6 +254,7 @@
   import ClearDatabaseDialog from '@/components/chat/ClearDatabaseDialog.vue'
   import ConversationPanel from '@/components/chat/ConversationPanel.vue'
   import ModelSettingsPanel from '@/components/chat/ModelSettingsPanel.vue'
+  import Layout from '@/plugins/layout.vue'
   import type {
     AdminUsersPayload,
     ApiResponse,
@@ -160,6 +320,7 @@
   const isLoadingTree = ref(false)
   const isLoadingContext = ref(false)
   const isClearingDatabase = ref(false)
+  const isBranchPanelCollapsed = ref(false)
   const isClearDialogOpen = ref(false)
   const errorMessage = ref('')
   const conversationPanelRef = ref<InstanceType<typeof ConversationPanel> | null>(null)
@@ -253,7 +414,7 @@
       return [{
         id: rootId,
         isCurrent: visibleTreeRootId.value === rootId,
-        label: `Root ${index + 1}`,
+        label: `Conversation ${index + 1}`,
         preview: nodePreviewText(root),
       }]
     })
@@ -404,13 +565,34 @@
     !isLoadingContext.value
   )
 
-  const apiFetch = (input: RequestInfo | URL, init: RequestInit = {}) =>
-    fetch(input, { ...init, credentials: 'include' })
+  const apiFetch = async (
+    input: RequestInfo | URL,
+    init: RequestInit = {},
+    timeoutMs = 15000,
+  ) => {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+
+    try {
+      return await fetch(input, {
+        ...init,
+        credentials: 'include',
+        signal: controller.signal,
+      })
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
+  }
 
   const assertOk = async <T>(response: Response, fallback: string): Promise<T> => {
     const payload = await response.json() as ApiResponse<T>
     if (!payload.ok) throw new Error(payload.error ?? fallback)
     return payload.data
+  }
+
+  const requestErrorMessage = (error: unknown, fallback: string) => {
+    if (error instanceof Error && error.name === 'AbortError') return fallback
+    return error instanceof Error ? error.message : fallback
   }
 
   const normalizeTreeNode = (node: MessageNode): MessageNode => ({
@@ -511,7 +693,10 @@
       isNewRootDraftActive.value = false
       await scrollToBottom()
     } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : 'Unable to load node context.'
+      errorMessage.value = requestErrorMessage(
+        error,
+        'Loading context timed out. Check the backend context API.',
+      )
     } finally {
       isLoadingContext.value = false
     }
@@ -923,17 +1108,264 @@
     height: 100%;
     min-height: 0;
     overflow: hidden;
-    padding: 18px;
+    padding: 12px;
     width: 100%;
   }
 
   .workspace-shell {
     display: grid;
-    gap: 14px;
-    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(280px, 340px);
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
     height: 100%;
     min-height: 0;
     overflow: hidden;
+    position: relative;
+  }
+
+  .workspace-shell--branch-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .branch-column {
+    min-height: 0;
+    min-width: 0;
+    position: relative;
+  }
+
+  .branch-column :deep(.branch-panel) {
+    height: 100%;
+    padding-top: 16px;
+  }
+
+  .branch-panel-toggle {
+    background: var(--icon-button-bg);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    box-shadow: none;
+    color: var(--icon-button-text);
+    height: 34px;
+    min-width: 34px;
+    width: 34px;
+    z-index: 4;
+  }
+
+  .branch-panel-toggle :deep(.v-btn__content),
+  .branch-panel-toggle :deep(.v-icon) {
+    color: var(--icon-button-text);
+  }
+
+  .branch-panel-toggle:hover {
+    background: var(--icon-button-hover);
+  }
+
+  .branch-panel-toggle--collapse {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+  }
+
+  .branch-panel-toggle--expand {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+  }
+
+  .root-history-panel {
+    color: var(--text-strong);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding: 16px;
+  }
+
+  .root-history-header {
+    align-items: center;
+    border-bottom: 1px solid var(--border-soft);
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    padding-bottom: 12px;
+  }
+
+  .eyebrow {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    margin: 0 0 4px;
+    text-transform: uppercase;
+  }
+
+  .root-history-header h2 {
+    color: var(--text-strong);
+    font-size: 1.08rem;
+    font-weight: 900;
+    letter-spacing: 0;
+    line-height: 1.15;
+    margin: 0;
+  }
+
+  .root-history-tools {
+    align-items: center;
+    display: flex;
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .root-history-action {
+    background: var(--icon-button-bg);
+    border-radius: 8px;
+    box-shadow: none;
+    color: var(--icon-button-text);
+    height: 36px;
+    min-width: 36px;
+    width: 36px;
+  }
+
+  .root-history-action :deep(.v-btn__content),
+  .root-history-action :deep(.v-icon) {
+    color: var(--icon-button-text);
+  }
+
+  .root-history-action:hover {
+    background: var(--icon-button-hover);
+  }
+
+  .root-history-action--danger {
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    color: var(--danger-text);
+  }
+
+  .root-history-action--danger :deep(.v-btn__content),
+  .root-history-action--danger :deep(.v-icon) {
+    color: var(--danger-text);
+  }
+
+  .root-history-action--danger:hover {
+    background: var(--danger-bg-hover);
+  }
+
+  .root-history-summary {
+    background: var(--surface-raised);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: hidden;
+  }
+
+  .root-history-summary div {
+    display: grid;
+    gap: 2px;
+    padding: 11px 12px;
+  }
+
+  .root-history-summary div + div {
+    border-left: 1px solid var(--border-soft);
+  }
+
+  .root-history-summary span {
+    color: var(--text-strong);
+    font-size: 1.2rem;
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .root-history-summary small {
+    color: var(--text-subtle);
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .root-history-list {
+    align-content: start;
+    display: grid;
+    flex: 1;
+    gap: 8px;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 2px;
+  }
+
+  .root-history-item {
+    align-items: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--text-strong);
+    cursor: pointer;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 34px minmax(0, 1fr);
+    min-height: 58px;
+    padding: 8px;
+    text-align: left;
+    width: 100%;
+  }
+
+  .root-history-item:disabled {
+    cursor: progress;
+  }
+
+  .root-history-item:hover:not(:disabled),
+  .root-history-item--active {
+    background: rgba(45, 212, 191, 0.12);
+    border-color: rgba(45, 212, 191, 0.38);
+  }
+
+  .root-history-item__icon {
+    align-items: center;
+    background: rgba(148, 163, 184, 0.12);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    color: var(--text-muted);
+    display: inline-flex;
+    height: 34px;
+    justify-content: center;
+    width: 34px;
+  }
+
+  .root-history-item--active .root-history-item__icon,
+  .root-history-item:hover:not(:disabled) .root-history-item__icon {
+    background: rgba(45, 212, 191, 0.18);
+    border-color: rgba(45, 212, 191, 0.42);
+    color: var(--text-strong);
+  }
+
+  .root-history-item__content {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .root-history-item__label {
+    color: inherit;
+    font-size: 0.82rem;
+    font-weight: 900;
+    line-height: 1.1;
+  }
+
+  .root-history-item__preview {
+    color: var(--text-subtle);
+    font-size: 0.76rem;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .root-history-empty {
+    color: var(--text-subtle);
+    font-weight: 800;
+    margin: 4px 0;
+    text-align: center;
   }
 
   .session-shell {
@@ -992,27 +1424,57 @@
     color: var(--text-strong);
   }
 
-  @media (max-width: 1180px) {
+  @media (max-width: 1420px) {
     .workspace-shell {
-      grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
-      grid-template-rows: minmax(0, 1fr) minmax(190px, 32%);
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) minmax(164px, 26%);
       height: 100%;
       min-height: 0;
       overflow: hidden;
+    }
+
+    .workspace-shell--branch-collapsed {
+      grid-template-rows: minmax(0, 1fr);
     }
   }
 
   @media (max-width: 820px) {
     .chat-page {
-      padding: 10px;
+      padding: 8px;
+    }
+
+    .root-history-panel {
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .root-history-header {
+      padding-bottom: 10px;
+    }
+
+    .root-history-summary {
+      display: none;
+    }
+
+    .root-history-list {
+      grid-auto-columns: minmax(188px, 1fr);
+      grid-auto-flow: column;
+      grid-template-columns: none;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0 0 2px;
     }
 
     .workspace-shell {
       grid-template-columns: 1fr;
-      grid-template-rows: minmax(150px, 25%) minmax(0, 1fr) minmax(150px, 24%);
+      grid-template-rows: minmax(0, 1fr) minmax(130px, 24%);
       height: 100%;
       min-height: 0;
       overflow: hidden;
+    }
+
+    .workspace-shell--branch-collapsed {
+      grid-template-rows: minmax(0, 1fr);
     }
   }
 </style>
