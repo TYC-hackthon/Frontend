@@ -1,6 +1,6 @@
 # Git-like AI Chat 前端
 
-這是專案的 Vue 3 前端，使用 Vite、TypeScript 與 Vuetify。目前首頁已改成簡易 LLM 對話工作區，讓使用者可以選擇 Provider、Model、設定 System Prompt，並送出訊息與模型對話。
+這是專案的 Vue 3 前端，使用 Vite、TypeScript 與 Vuetify。目前首頁已改成簡易 LLM 對話工作區，讓使用者可以選擇 Provider、Model、設定 System Prompt，並送出訊息與模型對話。Model 欄位可手動輸入；若選擇 Ollama，畫面會額外顯示 Ollama Base URL 與模型偵測按鈕。
 
 ## 主要架構
 
@@ -15,6 +15,7 @@
 前端會呼叫：
 
 - `GET /api/models`：取得可用 Provider 與 Model 清單。
+- `GET /api/ollama/models`：依照 Ollama Base URL 偵測本機已拉取的模型。
 - `POST /api/chat`：送出對話內容。
 
 `POST /api/chat` payload 目前包含：
@@ -23,6 +24,7 @@
 {
   "provider": "ollama",
   "model": "llama3.1",
+  "ollama_base_url": "http://localhost:11434",
   "messages": [
     { "role": "system", "content": "..." },
     { "role": "user", "content": "..." }

@@ -18,14 +18,37 @@
           variant="outlined"
         />
 
-        <v-select
+        <v-combobox
           v-model="selectedModel"
           density="comfortable"
           hide-details
           label="Model"
-          :items="availableModels"
+          :items="modelOptions"
           variant="outlined"
         />
+
+        <div v-if="selectedProvider === 'ollama'" class="ollama-settings">
+          <v-text-field
+            v-model="ollamaBaseUrl"
+            density="comfortable"
+            hide-details
+            label="Ollama Base URL"
+            placeholder="http://localhost:11434"
+            prepend-inner-icon="mdi-link-variant"
+            variant="outlined"
+            @blur="detectOllamaModels(true)"
+          />
+
+          <v-btn
+            color="primary"
+            :loading="isDetectingModels"
+            prepend-icon="mdi-magnify"
+            variant="tonal"
+            @click="detectOllamaModels(false)"
+          >
+            Detect models
+          </v-btn>
+        </div>
 
         <v-textarea
           v-model="systemPrompt"
@@ -173,10 +196,13 @@
   const providers = ref<Provider[]>(fallbackProviders)
   const selectedProvider = ref('ollama')
   const selectedModel = ref('llama3.1')
+  const ollamaBaseUrl = ref('http://localhost:11434')
+  const ollamaModels = ref<string[]>([])
   const systemPrompt = ref('You are a concise assistant that keeps context clean and explicit.')
   const draft = ref('')
   const messages = ref<ChatMessage[]>([])
   const isSending = ref(false)
+  const isDetectingModels = ref(false)
   const errorMessage = ref('')
   const messageListRef = ref<HTMLElement | null>(null)
   let nextMessageId = 1
@@ -186,6 +212,11 @@
   )
 
   const availableModels = computed(() => activeProvider.value?.models ?? [])
+
+  const modelOptions = computed(() => {
+    const detectedModels = selectedProvider.value === 'ollama' ? ollamaModels.value : []
+    return [...new Set([...detectedModels, ...availableModels.value])]
+  })
 
   const providerHint = computed(() => activeProvider.value?.hint ?? '')
 
@@ -199,7 +230,7 @@
   const canSend = computed(() =>
     draft.value.trim().length > 0 &&
     selectedProvider.value.length > 0 &&
-    selectedModel.value.length > 0 &&
+    selectedModel.value.trim().length > 0 &&
     !isSending.value
   )
 
@@ -218,6 +249,31 @@
     } catch {
       providers.value = fallbackProviders
       errorMessage.value = 'Using local model defaults because the backend is not reachable.'
+    }
+  }
+
+  const detectOllamaModels = async (silent = false) => {
+    if (selectedProvider.value !== 'ollama' || isDetectingModels.value) return
+
+    isDetectingModels.value = true
+    if (!silent) errorMessage.value = ''
+
+    try {
+      const params = new URLSearchParams({ base_url: ollamaBaseUrl.value.trim() })
+      const response = await fetch(`/api/ollama/models?${params.toString()}`)
+      const payload = await response.json()
+      if (!payload.ok) throw new Error(payload.error ?? 'Unable to detect Ollama models.')
+
+      ollamaModels.value = payload.data.models
+      if (!selectedModel.value.trim() && ollamaModels.value.length > 0) {
+        selectedModel.value = ollamaModels.value[0]
+      }
+    } catch (error) {
+      if (!silent) {
+        errorMessage.value = error instanceof Error ? error.message : 'Unable to detect Ollama models.'
+      }
+    } finally {
+      isDetectingModels.value = false
     }
   }
 
@@ -252,7 +308,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider: selectedProvider.value,
-          model: selectedModel.value,
+          model: selectedModel.value.trim(),
+          ollama_base_url: selectedProvider.value === 'ollama' ? ollamaBaseUrl.value.trim() : undefined,
           messages: conversation,
         }),
       })
@@ -273,10 +330,16 @@
   }
 
   watch(selectedProvider, () => {
-    selectedModel.value = availableModels.value[0] ?? ''
+    selectedModel.value = modelOptions.value[0] ?? ''
+    if (selectedProvider.value === 'ollama') {
+      detectOllamaModels(true)
+    }
   })
 
-  onMounted(loadModels)
+  onMounted(async () => {
+    await loadModels()
+    await detectOllamaModels(true)
+  })
 </script>
 
 <style scoped>
@@ -354,6 +417,11 @@
 
   .provider-hint {
     line-height: 1.4;
+  }
+
+  .ollama-settings {
+    display: grid;
+    gap: 10px;
   }
 
   .message-list {
