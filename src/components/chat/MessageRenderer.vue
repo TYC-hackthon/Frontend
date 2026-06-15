@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
   import { computed } from 'vue'
-  import hljs from 'highlight.js/lib/common'
+  import hljs from "highlight.js"
   import 'highlight.js/styles/github-dark.css'
   import katex from 'katex'
   import 'katex/dist/katex.min.css'

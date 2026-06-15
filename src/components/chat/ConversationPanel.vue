@@ -363,13 +363,13 @@
     font-weight: 900;
   }
 
-  <<<<<<< HEAD .message-bubble p {
+  .message-bubble p {
     line-height: 1.62;
     margin: 0;
     white-space: pre-wrap;
   }
 
-  =======>>>>>>>c501dd9b2a6ce35763c32a1f0df1e1062363ec9f .empty-context {
+  .empty-context {
     align-self: center;
     background: rgba(15, 23, 42, 0.62);
     border: 1px solid var(--border-soft);

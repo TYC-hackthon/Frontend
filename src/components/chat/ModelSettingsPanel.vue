@@ -38,19 +38,6 @@
             />
           </template>
         </v-tooltip>
-
-        <v-tooltip text="Sign out" location="bottom">
-          <template #activator="{ props: tooltipProps }">
-            <v-btn
-              v-bind="tooltipProps"
-              aria-label="Sign out"
-              class="icon-action"
-              icon="mdi-logout"
-              variant="flat"
-              @click="emit('logout')"
-            />
-          </template>
-        </v-tooltip>
       </div>
     </div>
 
@@ -159,7 +146,6 @@
 
   const emit = defineEmits<{
     detectModels: [silent: boolean]
-    logout: []
     openAdmin: []
   }>()
 

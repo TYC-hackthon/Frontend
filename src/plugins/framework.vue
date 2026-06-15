@@ -37,71 +37,11 @@
     provide('info', info);
     provide('toast', toast);
 
-    // login session related
-    const logined = ref(false);
-    const session: Ref<string | null> = ref('');
-    const username: Ref<string | null> = ref('');
-
-    provide('session', session);
-    provide('logined', logined);
-    provide('username', username);
-
-    const logout = () => {
-        // console.log('logout');
-        localStorage.removeItem('session');
-        $.post('https://api.citrc.tw/wbox/logout', {
-            id: session.value
-        }, () => {
-            info('登出成功');
-            init();
-        })
-    }
-
-    const login = (session: string) => {
-        // console.log('login');
-        if(logined.value) logout();
-        localStorage.setItem('session', session);
-        info('登入成功');
-        init();
-    }
-
-    const account = {
-        logout: logout,
-        login: login
-    }
-
-    provide('account', account);
-
     const init = () => {
-        // console.log('init');
-        session.value = localStorage.getItem('session');
-        logined.value = false;
-        if(session.value) $.ajax({
-            url: 'https://api.citrc.tw/wbox/whoami',
-            method: 'POST',
-            timeout: 5000,
-            data: {
-                id: session.value
-            }
-        }).done((response: any) => {
-            // response = JSON.parse(response);
-            if(!response['ok']) {
-                localStorage.removeItem('session');
-                return;
-            }
-            logined.value = true;
-            username.value = response.data;
-        }).fail(() => {
-            error('驗證失敗');
-        }).always(() => {
-            inited.value = true;
-            loading.value = false;
-        })
-        else inited.value = true, loading.value = false;
+        inited.value = true;
+        loading.value = false;
     }
     
-    import $ from 'jquery';
-
     onMounted(() => {
         init();
     })
