@@ -107,3 +107,68 @@ body::-webkit-scrollbar {
 .section { padding-top: 48px; padding-bottom: 48px; }
 .spacious { padding: 24px; }
 .spacious-lg { padding: 32px; }
+
+/* Smooth mode overrides for maximum performance & fluid navigation */
+html.smooth-mode {
+  --nav-blur: 0px;
+
+  /* Kill all keyframe animations, glowing shadows, text-shadows, and heavy blurs */
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    transition-duration: 0.05s !important;
+  }
+
+  /* Flatten background gradients for zero composite/paint thrashing */
+  .git-ai-layout,
+  .git-ai-main {
+    background: #070b13 !important;
+  }
+
+  .layout-glow-field,
+  .layout-scanline,
+  .layout-light-beam,
+  .layout-particle,
+  .git-ai-topbar::after,
+  .workspace-panel::before {
+    display: none !important;
+  }
+
+  .git-ai-topbar,
+  .git-ai-left-rail,
+  .workspace-panel,
+  .conversation-panel,
+  .conversation-header,
+  .branch-panel,
+  .glass,
+  .glass-card,
+  .system-prompt-menu {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: #0b111e !important;
+    border-color: rgba(148, 163, 184, 0.18) !important;
+  }
+
+  .send-button,
+  .branch-node--active .branch-graph__dot {
+    animation: none !important;
+    box-shadow: none !important;
+  }
+
+  .graph-firework {
+    background: #070b13 !important;
+  }
+
+  .graph-firework__line,
+  .graph-firework__node {
+    animation: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+  }
+}
+

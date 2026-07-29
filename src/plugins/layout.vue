@@ -42,34 +42,59 @@
         <slot name="topbar" />
       </nav>
 
-      <div v-if="props.showAccount" class="layout-account">
-        <v-hover>
-          <template #default="{ isHovering, props: hoverProps }">
-            <a
-              v-if="!logined"
-              class="nodeco"
-              href="/login"
-            >
-              <v-btn
-                class="layout-account__button"
-                prepend-icon="mdi-login"
-                variant="flat"
+      <div class="layout-topbar-actions">
+        <div class="effects-segmented-pill" role="radiogroup" aria-label="Visual performance mode">
+          <button
+            type="button"
+            class="segmented-pill-option"
+            :class="{ 'is-active': !isSmoothMode }"
+            @click="setSmoothMode(false)"
+            title="Enable full visual effects"
+          >
+            <v-icon icon="mdi-auto-fix" size="14" />
+            <span>Full FX</span>
+          </button>
+          <button
+            type="button"
+            class="segmented-pill-option"
+            :class="{ 'is-active': isSmoothMode }"
+            @click="setSmoothMode(true)"
+            title="Enable smooth mode for lightweight performance"
+          >
+            <v-icon icon="mdi-feather" size="14" />
+            <span>Smooth</span>
+          </button>
+        </div>
+
+        <div v-if="props.showAccount" class="layout-account">
+          <v-hover>
+            <template #default="{ isHovering, props: hoverProps }">
+              <a
+                v-if="!logined"
+                class="nodeco"
+                href="/login"
               >
-                登入
+                <v-btn
+                  class="layout-account__button"
+                  prepend-icon="mdi-login"
+                  variant="flat"
+                >
+                  登入
+                </v-btn>
+              </a>
+              <v-btn
+                v-else
+                v-bind="hoverProps"
+                class="layout-account__button"
+                :prepend-icon="isHovering ? 'mdi-logout' : 'mdi-account-circle'"
+                variant="flat"
+                @click="account.logout"
+              >
+                {{ isHovering ? '登出' : username }}
               </v-btn>
-            </a>
-            <v-btn
-              v-else
-              v-bind="hoverProps"
-              class="layout-account__button"
-              :prepend-icon="isHovering ? 'mdi-logout' : 'mdi-account-circle'"
-              variant="flat"
-              @click="account.logout"
-            >
-              {{ isHovering ? '登出' : username }}
-            </v-btn>
-          </template>
-        </v-hover>
+            </template>
+          </v-hover>
+        </div>
       </div>
     </header>
 
@@ -115,8 +140,22 @@
 
   const glowFieldRef = ref<HTMLElement | null>(null)
   const animations: { cancel: () => unknown }[] = []
+  const isSmoothMode = ref(false)
 
-  onMounted(() => {
+  function stopAnimations() {
+    animations.forEach(animation => {
+      try {
+        animation.cancel()
+      } catch {
+        // ignore
+      }
+    })
+    animations.length = 0
+  }
+
+  function startAnimations() {
+    stopAnimations()
+    if (isSmoothMode.value) return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     if (!glowFieldRef.value) return
 
@@ -176,10 +215,50 @@
         alternate: true,
       }),
     )
+  }
+
+  function applyEffectsMode() {
+    if (typeof document !== 'undefined') {
+      if (isSmoothMode.value) {
+        document.documentElement.classList.add('smooth-mode')
+        stopAnimations()
+      } else {
+        document.documentElement.classList.remove('smooth-mode')
+        startAnimations()
+      }
+    }
+  }
+
+  function setSmoothMode(value: boolean) {
+    isSmoothMode.value = value
+    try {
+      localStorage.setItem('git_ai_smooth_mode', value ? 'true' : 'false')
+    } catch {
+      // ignore
+    }
+    applyEffectsMode()
+  }
+
+  function toggleSmoothMode() {
+    setSmoothMode(!isSmoothMode.value)
+  }
+
+  onMounted(() => {
+    try {
+      const saved = localStorage.getItem('git_ai_smooth_mode')
+      if (saved === 'true') {
+        isSmoothMode.value = true
+      } else if (saved === null && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        isSmoothMode.value = true
+      }
+    } catch {
+      // ignore
+    }
+    applyEffectsMode()
   })
 
   onBeforeUnmount(() => {
-    animations.forEach(animation => animation.cancel())
+    stopAnimations()
   })
 </script>
 
@@ -455,6 +534,62 @@ body {
   .layout-topbar__workspace {
     min-width: 0;
     overflow: visible;
+  }
+
+  .layout-topbar-actions {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  .effects-segmented-pill {
+    align-items: center;
+    background: rgba(15, 23, 42, 0.76);
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    display: inline-flex;
+    gap: 3px;
+    padding: 3px;
+    user-select: none;
+  }
+
+  .segmented-pill-option {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: 9999px;
+    color: var(--text-subtle);
+    cursor: pointer;
+    display: inline-flex;
+    font-size: 0.78rem;
+    font-weight: 700;
+    gap: 5px;
+    height: 30px;
+    padding: 0 12px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+  }
+
+  .segmented-pill-option:hover:not(.is-active) {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-strong);
+  }
+
+  .segmented-pill-option.is-active {
+    background: linear-gradient(135deg, rgba(20, 184, 166, 0.26), rgba(99, 102, 241, 0.22));
+    border: 1px solid rgba(45, 212, 191, 0.45);
+    box-shadow: 0 0 12px rgba(45, 212, 191, 0.25);
+    color: #5eead4;
+    font-weight: 800;
+  }
+
+  .segmented-pill-option.is-active:last-child {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.28), rgba(245, 158, 11, 0.22));
+    border: 1px solid rgba(16, 185, 129, 0.55);
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+    color: #6ee7b7;
   }
 
   .layout-account {
