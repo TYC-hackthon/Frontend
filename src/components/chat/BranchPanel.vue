@@ -153,6 +153,7 @@
           'branch-node--active': item.node.id === currentNodeId,
           'branch-node--assistant': item.node.role === 'assistant',
           'branch-node--exchange': item.node.role === 'exchange',
+          'branch-node--merge': item.node.role === 'merge',
         }"
         :disabled="isLoadingContext"
         :style="branchNodeStyle(item)"
@@ -166,9 +167,15 @@
         >
           <span
             v-for="forkLane in forkLanesForPaint(item)"
-            :key="forkLane"
+            :key="'fork-' + forkLane"
             class="branch-node__fork"
             :style="forkLineStyle(item, forkLane)"
+          />
+          <span
+            v-for="mergeLane in mergeLanesForPaint(item)"
+            :key="'merge-' + mergeLane"
+            class="branch-node__merge-line"
+            :style="mergeLineStyle(item, mergeLane)"
           />
           <span
             v-for="lane in item.graphLanes"
@@ -251,6 +258,7 @@
   }
 
   const nodeIcon = (node: MessageNode) => {
+    if (node.role === 'merge') return 'mdi-source-merge'
     if (node.role === 'exchange') return 'mdi-swap-horizontal'
     return node.role === 'user' ? 'mdi-account' : 'mdi-robot'
   }
@@ -286,10 +294,28 @@
   const graphLaneClasses = (lane: GraphLane, item: FlattenedNode) => ({
     'branch-graph__lane--fork-target': lane.isForkTarget,
     'branch-graph__lane--leaf': lane.isNode && !item.hasChildren,
+    'branch-graph__lane--merge-source': item.mergeLanes.includes(lane.index),
     'branch-graph__lane--node': lane.isNode,
     'branch-graph__lane--root': lane.isNode && item.parentLane === null,
     'branch-graph__lane--through': lane.isThrough,
   })
+
+  const mergeLanesForPaint = (item: FlattenedNode) =>
+    [...item.mergeLanes].sort((left, right) =>
+      Math.abs(right - item.lane) - Math.abs(left - item.lane)
+    )
+
+  const mergeLineStyle = (item: FlattenedNode, mergeLane: number) => {
+    const firstLane = Math.min(item.lane, mergeLane)
+    const lastLane = Math.max(item.lane, mergeLane)
+    const sourceLane = item.graphLanes.find(lane => lane.index === mergeLane)
+
+    return {
+      background: sourceLane?.color ?? item.branchColor,
+      left: `calc((${firstLane} * var(--graph-lane-width)) + (var(--graph-lane-width) / 2))`,
+      width: `calc(${lastLane - firstLane} * var(--graph-lane-width))`,
+    }
+  }
 
   const graphLaneStyle = (lane: GraphLane) => ({
     '--lane-color': lane.color,
@@ -679,6 +705,23 @@
     opacity: 1;
   }
 
+  .branch-node__merge-line {
+    background: var(--node-accent);
+    border-radius: 999px;
+    box-shadow: 0 0 14px color-mix(in srgb, var(--node-accent) 48%, transparent);
+    height: 3px;
+    opacity: 0.82;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 0;
+  }
+
+  .branch-node:hover:not(:disabled) .branch-node__merge-line,
+  .branch-node--active .branch-node__merge-line {
+    opacity: 1;
+  }
+
   .branch-graph__lane {
     --lane-color: var(--graph-line);
     min-width: var(--graph-lane-width);
@@ -730,6 +773,14 @@
 
   .branch-graph__lane--node.branch-graph__lane--leaf.branch-graph__lane--root::before {
     display: none;
+  }
+
+  .branch-graph__lane--merge-source::before {
+    background: var(--lane-color) !important;
+    bottom: 50% !important;
+    display: block !important;
+    opacity: 0.82 !important;
+    top: 0 !important;
   }
 
   .branch-graph__dot {

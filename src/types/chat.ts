@@ -38,7 +38,7 @@ export type UpdateUserPayload = {
 }
 
 export type ConversationRole = 'user' | 'assistant'
-export type NodeRole = ConversationRole | 'exchange'
+export type NodeRole = ConversationRole | 'exchange' | 'merge'
 
 export type ChatMessage = {
   id: string
@@ -52,6 +52,8 @@ export type ChatMessage = {
 export type MessageNode = {
   id: number
   parent_id: number | null
+  merge_parent_a_id?: number | null
+  merge_parent_b_id?: number | null
   role: NodeRole
   content: string
   user_content?: string | null
@@ -90,7 +92,6 @@ export type ChatResponsePayload = {
   currentNodeId?: number | null
 }
 
-export type MergeResponsePayload = ChatResponsePayload
 
 export type ApiResponse<T> = {
   ok: boolean
@@ -123,5 +124,6 @@ export type FlattenedNode = {
   graphLanes: GraphLane[]
   hasChildren: boolean
   lane: number
+  mergeLanes: number[]
   parentLane: number | null
 }

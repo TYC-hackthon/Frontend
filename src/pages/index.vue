@@ -223,14 +223,6 @@
           @confirm="clearDatabase"
         />
 
-        <MergeDialog
-          v-model="isMergeDialogOpen"
-          :is-merging="isMerging"
-          :node-a-id="mergeSourceNodeId"
-          :node-b-id="mergeTargetNodeId"
-          @confirm="executeMerge"
-        />
-
         <AdminPanel
           v-if="currentUser.is_admin"
           v-model="isAdminPanelOpen"
@@ -260,7 +252,6 @@
   import AdminPanel from '@/components/chat/AdminPanel.vue'
   import BranchPanel from '@/components/chat/BranchPanel.vue'
   import ClearDatabaseDialog from '@/components/chat/ClearDatabaseDialog.vue'
-  import MergeDialog from '@/components/chat/MergeDialog.vue'
   import ConversationPanel from '@/components/chat/ConversationPanel.vue'
   import GitGraphFireworkOverlay from '@/components/chat/GitGraphFireworkOverlay.vue'
   import ModelSettingsPanel from '@/components/chat/ModelSettingsPanel.vue'
@@ -272,7 +263,6 @@
     AuthUser,
     ChatMessage,
     ChatResponsePayload,
-    MergeResponsePayload,
     ContextMessage,
     ContextPayload,
     CreateUserPayload,
@@ -340,9 +330,7 @@
 
   const isMergeMode = ref(false)
   const mergeSourceNodeId = ref<number | null>(null)
-  const isMergeDialogOpen = ref(false)
   const mergeTargetNodeId = ref<number | null>(null)
-  const isMerging = ref(false)
 
   let nextLocalMessageId = 1
 
@@ -486,6 +474,21 @@
       return lane
     }
 
+    const getAncestorChain = (endNodeId: number | null | undefined): MessageNode[] => {
+      if (!endNodeId) return []
+      const chain: MessageNode[] = []
+      let currentId: number | null = endNodeId
+      const chainSeen = new Set<number>()
+      while (currentId !== null && !chainSeen.has(currentId)) {
+        chainSeen.add(currentId)
+        const node = nodeById.value.get(currentId)
+        if (!node) break
+        chain.push(node)
+        currentId = node.parent_id
+      }
+      return chain.reverse()
+    }
+
     const visit = (
       nodeId: number,
       depth: number,
@@ -502,8 +505,92 @@
       visited.add(nodeId)
       maxLane = Math.max(maxLane, lane, ...openLanes.keys())
 
+      let nodeMergeLanes: number[] = []
+      let effectiveDepth = depth
+      let currentOpenLanes = new Map(openLanes)
+
+      if (node.role === 'merge') {
+        const pA = node.merge_parent_a_id ? nodeById.value.get(node.merge_parent_a_id) : undefined
+        const pB = node.merge_parent_b_id ? nodeById.value.get(node.merge_parent_b_id) : undefined
+
+        const chainA = pA && !visited.has(pA.id) ? [pA] : []
+        const chainB = pB && !visited.has(pB.id) ? [pB] : []
+
+        if (chainA.length > 0 || chainB.length > 0) {
+          const allUsed = new Set([...currentOpenLanes.keys(), lane])
+          const secondaryLane = nextAvailableLane(allUsed, lane)
+          const secondaryStyle = nextBranchStyle()
+
+          if (chainB.length > 0) {
+            nodeMergeLanes = [secondaryLane]
+            maxLane = Math.max(maxLane, secondaryLane)
+          }
+
+          const maxLen = Math.max(chainA.length, chainB.length)
+          const offsetA = maxLen - chainA.length
+          const offsetB = maxLen - chainB.length
+
+          for (let i = 0; i < maxLen; i++) {
+            const aNode = chainA[i - offsetA]
+            const bNode = chainB[i - offsetB]
+            const currentDepth = depth + i
+
+            if (aNode) {
+              visited.add(aNode.id)
+              
+              // Only 'lane' is open for aNode
+              const aOpenLanes = new Map(currentOpenLanes)
+              if (i >= offsetA) aOpenLanes.set(lane, branchStyle)
+              
+              const laneStyles = new Map(aOpenLanes)
+
+              rows.push({
+                branchColor: branchStyle.color,
+                branchRingColor: branchStyle.ringColor,
+                node: aNode,
+                depth: currentDepth,
+                forkLanes: [],
+                mergeLanes: [],
+                hasChildren: true,
+                lane: lane,
+                laneStyles,
+                openLanes: [...aOpenLanes.keys()].filter(l => l !== lane),
+                parentLane: i === offsetA ? null : lane,
+              })
+            }
+
+            if (bNode) {
+              visited.add(bNode.id)
+              
+              // Now both are open
+              const bOpenLanes = new Map(currentOpenLanes)
+              if (i >= offsetA) bOpenLanes.set(lane, branchStyle)
+              if (i >= offsetB) bOpenLanes.set(secondaryLane, secondaryStyle)
+              
+              const laneStyles = new Map(bOpenLanes)
+              
+              rows.push({
+                branchColor: secondaryStyle.color,
+                branchRingColor: secondaryStyle.ringColor,
+                node: bNode,
+                depth: currentDepth,
+                forkLanes: [],
+                mergeLanes: [],
+                hasChildren: true,
+                lane: secondaryLane,
+                laneStyles,
+                openLanes: [...bOpenLanes.keys()].filter(l => l !== secondaryLane),
+                parentLane: i === offsetB ? null : secondaryLane,
+              })
+            }
+          }
+
+          effectiveDepth = depth + maxLen
+        }
+      }
+
       const childIds = node.children.filter(childId => nodeById.value.has(childId))
-      const usedLanes = new Set([...openLanes.keys(), lane])
+      const usedLanes = new Set([...currentOpenLanes.keys(), lane])
       const childLanes = childIds.map((_, index) =>
         index === 0 ? lane : nextAvailableLane(usedLanes, lane)
       )
@@ -511,7 +598,7 @@
         index === 0 ? branchStyle : nextBranchStyle()
       )
       const forkLanes = childLanes.slice(1)
-      const laneStyles = new Map(openLanes)
+      const laneStyles = new Map(currentOpenLanes)
 
       laneStyles.set(lane, branchStyle)
       forkLanes.forEach((forkLane, index) => {
@@ -524,16 +611,17 @@
         branchColor: branchStyle.color,
         branchRingColor: branchStyle.ringColor,
         node,
-        depth,
+        depth: effectiveDepth,
         forkLanes,
+        mergeLanes: nodeMergeLanes,
         hasChildren: childIds.length > 0,
         lane,
         laneStyles,
-        openLanes: [...openLanes.keys()],
-        parentLane,
+        openLanes: [...currentOpenLanes.keys()],
+        parentLane: node.role === 'merge' ? lane : parentLane,
       })
 
-      const pendingSiblingLanes = new Map(openLanes)
+      const pendingSiblingLanes = new Map(currentOpenLanes)
       forkLanes.forEach((forkLane, index) => {
         pendingSiblingLanes.set(forkLane, childBranchStyles[index + 1])
       })
@@ -543,7 +631,7 @@
         const childOpenLanes = new Map(pendingSiblingLanes)
         childOpenLanes.delete(childLane)
 
-        visit(childId, depth + 1, childLane, childBranchStyles[index], childOpenLanes, lane)
+        visit(childId, effectiveDepth + 1, childLane, childBranchStyles[index], childOpenLanes, lane)
         pendingSiblingLanes.delete(childLane)
       })
     }
@@ -555,6 +643,7 @@
     return rows.map(({ laneStyles, openLanes, ...row }) => {
       const openLaneSet = new Set(openLanes)
       const forkLaneSet = new Set(row.forkLanes)
+      const mergeLaneSet = new Set(row.mergeLanes)
 
       return {
         ...row,
@@ -566,6 +655,7 @@
             color: laneStyle.color,
             index,
             isForkTarget: forkLaneSet.has(index),
+            isMergeSource: mergeLaneSet.has(index),
             isNode: index === row.lane,
             isThrough: openLaneSet.has(index),
           }
@@ -573,6 +663,7 @@
       }
     })
   })
+
 
   const isReady = computed(() => Boolean(activeProvider.value?.configured))
 
@@ -703,6 +794,19 @@
     }
   }
 
+  const findMergeAncestor = (nodeId: number): number | null => {
+    let currentId: number | null = nodeId
+    const seen = new Set<number>()
+    while (currentId !== null && !seen.has(currentId)) {
+      seen.add(currentId)
+      const node = nodeById.value.get(currentId)
+      if (!node) return null
+      if (node.role === 'merge') return node.id
+      currentId = node.parent_id
+    }
+    return null
+  }
+
   const loadContext = async (nodeId: number) => {
     isLoadingContext.value = true
     errorMessage.value = ''
@@ -710,7 +814,36 @@
     try {
       const response = await apiFetch(`/api/context/${nodeId}`)
       const data = await assertOk<ContextPayload>(response, 'Unable to load node context.')
-      messages.value = data.messages.map(messageFromContextMessage)
+      const contextMessages = data.messages.map(messageFromContextMessage)
+
+      const targetNode = nodeById.value.get(nodeId)
+      if (targetNode?.role === 'merge') {
+        // Merge node itself: show no messages in chat
+        messages.value = []
+      } else {
+        const mergeAncestorId = findMergeAncestor(nodeId)
+        if (mergeAncestorId !== null) {
+          // Collect node IDs from target up to (but not including) the merge node
+          const postMergeNodeIds = new Set<number>()
+          let walkId: number | null = nodeId
+          const walkSeen = new Set<number>()
+          while (walkId !== null && !walkSeen.has(walkId)) {
+            walkSeen.add(walkId)
+            const n = nodeById.value.get(walkId)
+            if (!n) break
+            if (n.role === 'merge') break
+            postMergeNodeIds.add(walkId)
+            walkId = n.parent_id
+          }
+          // Only show messages from post-merge nodes
+          messages.value = contextMessages.filter(
+            m => m.nodeId !== undefined && postMergeNodeIds.has(m.nodeId)
+          )
+        } else {
+          messages.value = contextMessages
+        }
+      }
+
       currentNodeId.value = data.node_id
       activeTreeRootId.value = rootIdForNode(data.node_id)
       isNewRootDraftActive.value = false
@@ -724,6 +857,7 @@
       isLoadingContext.value = false
     }
   }
+
 
   const selectNode = async (nodeId: number) => {
     if (nodeId === currentNodeId.value || isLoadingContext.value) return
@@ -996,21 +1130,14 @@
     mergeSourceNodeId.value = null
   }
 
-  const selectMergeTarget = (nodeId: number) => {
+  const selectMergeTarget = async (nodeId: number) => {
     if (mergeSourceNodeId.value === null) return
     if (nodeId === mergeSourceNodeId.value) {
       errorMessage.value = 'Cannot merge a node with itself.'
       return
     }
-    mergeTargetNodeId.value = nodeId
-    isMergeMode.value = false
-    isMergeDialogOpen.value = true
-  }
-
-  const executeMerge = async (message: string) => {
-    if (!mergeSourceNodeId.value || !mergeTargetNodeId.value || !message.trim() || isMerging.value) return
     
-    isMerging.value = true
+    isMergeMode.value = false
     errorMessage.value = ''
     
     try {
@@ -1018,32 +1145,29 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider: selectedProvider.value,
-          model: selectedModel.value.trim(),
-          ollama_base_url: selectedProvider.value === 'ollama' ? ollamaBaseUrl.value.trim() : undefined,
-          system_prompt: systemPrompt.value,
           node_a_id: mergeSourceNodeId.value,
-          node_b_id: mergeTargetNodeId.value,
-          message: message.trim(),
+          node_b_id: nodeId,
         }),
-      }, 120000)
-      const data = await assertOk<ChatResponsePayload>(response, 'The backend could not complete the merge request.')
+      })
+      const data = await assertOk<{ node: MessageNode; current_node_id: number; currentNodeId: number }>(response, 'Unable to merge branches.')
       const nextNodeId = data.current_node_id ?? data.currentNodeId ?? data.node?.id ?? null
       
-      isMergeDialogOpen.value = false
       mergeSourceNodeId.value = null
       mergeTargetNodeId.value = null
       
       await loadTree()
       if (nextNodeId !== null) {
-        await loadContext(nextNodeId)
+        // Navigate to merge node - clear chat, set as current
+        currentNodeId.value = nextNodeId
+        activeTreeRootId.value = rootIdForNode(nextNodeId)
+        isNewRootDraftActive.value = false
+        messages.value = [] // Clear chat panel for merge node
       }
     } catch (error) {
       errorMessage.value = error instanceof Error ? error.message : 'Unexpected merge error.'
-    } finally {
-      isMerging.value = false
     }
   }
+
 
   watch(selectedProvider, () => {
     selectedModel.value = modelOptions.value[0] ?? ''
