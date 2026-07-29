@@ -6,7 +6,7 @@
         <h2>{{ currentNodeLabel }}</h2>
       </div>
 
-      <div v-if="showHeaderActions || showFireworkAction" class="branch-tools">
+      <div v-if="showHeaderActions || showFireworkAction || currentNodeId !== null" class="branch-tools">
         <v-tooltip v-if="showFireworkAction" text="Fullscreen burst" location="bottom">
           <template #activator="{ props: tooltipProps }">
             <v-btn
@@ -17,6 +17,20 @@
               icon="mdi-firework"
               variant="flat"
               @click="emit('burstGraph')"
+            />
+          </template>
+        </v-tooltip>
+
+        <v-tooltip text="Merge branches" location="bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              aria-label="Merge branches"
+              class="icon-action"
+              :disabled="currentNodeId === null"
+              icon="mdi-source-merge"
+              variant="flat"
+              @click="emit('mergeStart')"
             />
           </template>
         </v-tooltip>
@@ -115,6 +129,18 @@
     </div>
 
     <div class="branch-tree" :class="{ 'branch-tree--loading': isLoadingTree }">
+      <div v-if="isMergeMode" class="merge-banner">
+        <span>Select the second node to merge with Node #{{ mergeSourceNodeId }}</span>
+        <v-btn
+          variant="text"
+          size="small"
+          class="cancel-merge-btn"
+          @click="emit('mergeCancelled')"
+        >
+          Cancel
+        </v-btn>
+      </div>
+
       <p v-if="flattenedTreeNodes.length === 0" class="empty-tree">
         No saved nodes
       </p>
@@ -131,7 +157,7 @@
         :disabled="isLoadingContext"
         :style="branchNodeStyle(item)"
         type="button"
-        @click="emit('selectNode', item.node.id)"
+        @click="isMergeMode ? emit('mergeTarget', item.node.id) : emit('selectNode', item.node.id)"
       >
         <span
           aria-hidden="true"
@@ -183,6 +209,8 @@
     isClearingDatabase: boolean
     isLoadingContext: boolean
     isLoadingTree: boolean
+    isMergeMode?: boolean
+    mergeSourceNodeId?: number | null
     isNewRootDraftActive: boolean
     showFireworkAction?: boolean
     showHeaderActions?: boolean
@@ -196,6 +224,8 @@
     showHeaderActions: true,
     showRootSwitcher: true,
     showSummary: true,
+    isMergeMode: false,
+    mergeSourceNodeId: null,
   })
 
   const emit = defineEmits<{
@@ -205,6 +235,9 @@
     selectNode: [nodeId: number]
     selectRootTree: [rootId: number]
     startRoot: []
+    mergeStart: []
+    mergeCancelled: []
+    mergeTarget: [nodeId: number]
   }>()
 
   const nodePreview = (node: MessageNode) => {
@@ -499,6 +532,26 @@
 
   .branch-tree--loading {
     opacity: 0.64;
+  }
+
+  .merge-banner {
+    background: rgba(20, 184, 166, 0.16);
+    border: 1px solid rgba(20, 184, 166, 0.3);
+    border-radius: 8px;
+    color: var(--primary, #14b8a6);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .cancel-merge-btn {
+    color: var(--text-strong, #f8fafc);
+    text-transform: none;
+    font-weight: 800;
   }
 
   .empty-tree {

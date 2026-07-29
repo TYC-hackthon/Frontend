@@ -196,6 +196,11 @@
             @select-node="selectNode"
             @select-root-tree="selectRootTree"
             @start-root="startRootConversation"
+            :is-merge-mode="isMergeMode"
+            :merge-source-node-id="mergeSourceNodeId"
+            @merge-start="startMergeMode"
+            @merge-cancelled="cancelMergeMode"
+            @merge-target="selectMergeTarget"
           />
         </div>
 
@@ -216,6 +221,14 @@
           v-model="isClearDialogOpen"
           :is-clearing-database="isClearingDatabase"
           @confirm="clearDatabase"
+        />
+
+        <MergeDialog
+          v-model="isMergeDialogOpen"
+          :is-merging="isMerging"
+          :node-a-id="mergeSourceNodeId"
+          :node-b-id="mergeTargetNodeId"
+          @confirm="executeMerge"
         />
 
         <AdminPanel
@@ -247,6 +260,7 @@
   import AdminPanel from '@/components/chat/AdminPanel.vue'
   import BranchPanel from '@/components/chat/BranchPanel.vue'
   import ClearDatabaseDialog from '@/components/chat/ClearDatabaseDialog.vue'
+  import MergeDialog from '@/components/chat/MergeDialog.vue'
   import ConversationPanel from '@/components/chat/ConversationPanel.vue'
   import GitGraphFireworkOverlay from '@/components/chat/GitGraphFireworkOverlay.vue'
   import ModelSettingsPanel from '@/components/chat/ModelSettingsPanel.vue'
@@ -258,6 +272,7 @@
     AuthUser,
     ChatMessage,
     ChatResponsePayload,
+    MergeResponsePayload,
     ContextMessage,
     ContextPayload,
     CreateUserPayload,
@@ -322,6 +337,13 @@
   const isFireworkOverlayOpen = ref(false)
   const errorMessage = ref('')
   const conversationPanelRef = ref<InstanceType<typeof ConversationPanel> | null>(null)
+
+  const isMergeMode = ref(false)
+  const mergeSourceNodeId = ref<number | null>(null)
+  const isMergeDialogOpen = ref(false)
+  const mergeTargetNodeId = ref<number | null>(null)
+  const isMerging = ref(false)
+
   let nextLocalMessageId = 1
 
   const activeProvider = computed(() =>
@@ -960,6 +982,66 @@
     } finally {
       isSending.value = false
       await scrollToBottom()
+    }
+  }
+
+  const startMergeMode = () => {
+    if (currentNodeId.value === null) return
+    isMergeMode.value = true
+    mergeSourceNodeId.value = currentNodeId.value
+  }
+
+  const cancelMergeMode = () => {
+    isMergeMode.value = false
+    mergeSourceNodeId.value = null
+  }
+
+  const selectMergeTarget = (nodeId: number) => {
+    if (mergeSourceNodeId.value === null) return
+    if (nodeId === mergeSourceNodeId.value) {
+      errorMessage.value = 'Cannot merge a node with itself.'
+      return
+    }
+    mergeTargetNodeId.value = nodeId
+    isMergeMode.value = false
+    isMergeDialogOpen.value = true
+  }
+
+  const executeMerge = async (message: string) => {
+    if (!mergeSourceNodeId.value || !mergeTargetNodeId.value || !message.trim() || isMerging.value) return
+    
+    isMerging.value = true
+    errorMessage.value = ''
+    
+    try {
+      const response = await apiFetch('/api/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: selectedProvider.value,
+          model: selectedModel.value.trim(),
+          ollama_base_url: selectedProvider.value === 'ollama' ? ollamaBaseUrl.value.trim() : undefined,
+          system_prompt: systemPrompt.value,
+          node_a_id: mergeSourceNodeId.value,
+          node_b_id: mergeTargetNodeId.value,
+          message: message.trim(),
+        }),
+      }, 120000)
+      const data = await assertOk<ChatResponsePayload>(response, 'The backend could not complete the merge request.')
+      const nextNodeId = data.current_node_id ?? data.currentNodeId ?? data.node?.id ?? null
+      
+      isMergeDialogOpen.value = false
+      mergeSourceNodeId.value = null
+      mergeTargetNodeId.value = null
+      
+      await loadTree()
+      if (nextNodeId !== null) {
+        await loadContext(nextNodeId)
+      }
+    } catch (error) {
+      errorMessage.value = error instanceof Error ? error.message : 'Unexpected merge error.'
+    } finally {
+      isMerging.value = false
     }
   }
 

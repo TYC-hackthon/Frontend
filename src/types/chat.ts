@@ -90,6 +90,8 @@ export type ChatResponsePayload = {
   currentNodeId?: number | null
 }
 
+export type MergeResponsePayload = ChatResponsePayload
+
 export type ApiResponse<T> = {
   ok: boolean
   data: T
