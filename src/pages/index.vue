@@ -467,6 +467,7 @@
 
     const rows: RawGraphRow[] = []
     const visited = new Set<number>()
+    const nodeLanes = new Map<number, number>()
     let maxLane = 0
     let nextPaletteIndex = 0
 
@@ -518,6 +519,7 @@
       if (!node) return
 
       visited.add(nodeId)
+      nodeLanes.set(nodeId, lane)
       maxLane = Math.max(maxLane, lane, ...openLanes.keys())
 
       let nodeMergeLanes: number[] = []
@@ -528,79 +530,90 @@
         const pA = node.merge_parent_a_id ? nodeById.value.get(node.merge_parent_a_id) : undefined
         const pB = node.merge_parent_b_id ? nodeById.value.get(node.merge_parent_b_id) : undefined
 
-        const chainA = pA && !visited.has(pA.id) ? [pA] : []
-        const chainB = pB && !visited.has(pB.id) ? [pB] : []
+        const isBPrimary = pB && visited.has(pB.id) && (!pA || !visited.has(pA.id))
 
-        if (chainA.length > 0 || chainB.length > 0) {
+        const chainPrimary = isBPrimary ? (pB && !visited.has(pB.id) ? [pB] : []) : (pA && !visited.has(pA.id) ? [pA] : [])
+        const chainSecondary = isBPrimary ? (pA && !visited.has(pA.id) ? [pA] : []) : (pB && !visited.has(pB.id) ? [pB] : [])
+
+        if (chainPrimary.length > 0 || chainSecondary.length > 0) {
           const allUsed = new Set([...currentOpenLanes.keys(), lane])
           const secondaryLane = nextAvailableLane(allUsed, lane)
           const secondaryStyle = nextBranchStyle()
 
-          if (chainB.length > 0) {
-            nodeMergeLanes = [secondaryLane]
+          if (chainSecondary.length > 0) {
             maxLane = Math.max(maxLane, secondaryLane)
           }
 
-          const maxLen = Math.max(chainA.length, chainB.length)
-          const offsetA = maxLen - chainA.length
-          const offsetB = maxLen - chainB.length
+          const maxLen = Math.max(chainPrimary.length, chainSecondary.length)
+          const offsetPrimary = maxLen - chainPrimary.length
+          const offsetSecondary = maxLen - chainSecondary.length
 
           for (let i = 0; i < maxLen; i++) {
-            const aNode = chainA[i - offsetA]
-            const bNode = chainB[i - offsetB]
+            const primaryNode = chainPrimary[i - offsetPrimary]
+            const secondaryNode = chainSecondary[i - offsetSecondary]
             const currentDepth = depth + i
 
-            if (aNode) {
-              visited.add(aNode.id)
+            if (primaryNode) {
+              visited.add(primaryNode.id)
+              nodeLanes.set(primaryNode.id, lane)
               
-              // Only 'lane' is open for aNode
-              const aOpenLanes = new Map(currentOpenLanes)
-              if (i >= offsetA) aOpenLanes.set(lane, branchStyle)
+              const primaryOpenLanes = new Map(currentOpenLanes)
+              if (i >= offsetPrimary) primaryOpenLanes.set(lane, branchStyle)
               
-              const laneStyles = new Map(aOpenLanes)
+              const laneStyles = new Map(primaryOpenLanes)
 
               rows.push({
                 branchColor: branchStyle.color,
                 branchRingColor: branchStyle.ringColor,
-                node: aNode,
+                node: primaryNode,
                 depth: currentDepth,
                 forkLanes: [],
                 mergeLanes: [],
                 hasChildren: true,
                 lane: lane,
                 laneStyles,
-                openLanes: [...aOpenLanes.keys()].filter(l => l !== lane),
-                parentLane: i === offsetA ? null : lane,
+                openLanes: [...primaryOpenLanes.keys()].filter(l => l !== lane),
+                parentLane: i === offsetPrimary ? null : lane,
               })
             }
 
-            if (bNode) {
-              visited.add(bNode.id)
+            if (secondaryNode) {
+              visited.add(secondaryNode.id)
+              nodeLanes.set(secondaryNode.id, secondaryLane)
               
-              // Now both are open
-              const bOpenLanes = new Map(currentOpenLanes)
-              if (i >= offsetA) bOpenLanes.set(lane, branchStyle)
-              if (i >= offsetB) bOpenLanes.set(secondaryLane, secondaryStyle)
+              const secOpenLanes = new Map(currentOpenLanes)
+              if (i >= offsetPrimary) secOpenLanes.set(lane, branchStyle)
+              if (i >= offsetSecondary) secOpenLanes.set(secondaryLane, secondaryStyle)
               
-              const laneStyles = new Map(bOpenLanes)
+              const laneStyles = new Map(secOpenLanes)
               
               rows.push({
                 branchColor: secondaryStyle.color,
                 branchRingColor: secondaryStyle.ringColor,
-                node: bNode,
+                node: secondaryNode,
                 depth: currentDepth,
                 forkLanes: [],
                 mergeLanes: [],
                 hasChildren: true,
                 lane: secondaryLane,
                 laneStyles,
-                openLanes: [...bOpenLanes.keys()].filter(l => l !== secondaryLane),
-                parentLane: i === offsetB ? null : secondaryLane,
+                openLanes: [...secOpenLanes.keys()].filter(l => l !== secondaryLane),
+                parentLane: i === offsetSecondary ? null : secondaryLane,
               })
             }
           }
 
           effectiveDepth = depth + maxLen
+        }
+
+        const laneA = pA ? nodeLanes.get(pA.id) : undefined
+        const laneB = pB ? nodeLanes.get(pB.id) : undefined
+
+        if (laneA !== undefined && laneA !== lane) {
+          nodeMergeLanes.push(laneA)
+        }
+        if (laneB !== undefined && laneB !== lane) {
+          nodeMergeLanes.push(laneB)
         }
       }
 

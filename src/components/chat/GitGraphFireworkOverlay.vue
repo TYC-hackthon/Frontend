@@ -110,32 +110,7 @@
     const items = props.flattenedTreeNodes
     if (items.length === 0) return []
 
-    const itemById = new Map(items.map(item => [item.node.id, item]))
-    const childrenByParent = new Map<number | null, FlattenedNode[]>()
-
-    for (const item of items) {
-      const children = childrenByParent.get(item.node.parent_id) ?? []
-      children.push(item)
-      childrenByParent.set(item.node.parent_id, children)
-    }
-
-    const root = items[0]
-    const orderedItems: FlattenedNode[] = []
-    const queue: FlattenedNode[] = [root]
-    const visited = new Set<number>()
-
-    while (queue.length > 0) {
-      const item = queue.shift()
-      if (!item || visited.has(item.node.id)) continue
-
-      visited.add(item.node.id)
-      orderedItems.push(item)
-
-      const children = (childrenByParent.get(item.node.id) ?? [])
-        .filter(child => itemById.has(child.node.id))
-        .sort((left, right) => left.node.id - right.node.id)
-      queue.push(...children)
-    }
+    const orderedItems = [...items].sort((a, b) => a.depth - b.depth || a.node.id - b.node.id)
 
     const bfsIndexById = new Map(orderedItems.map((item, index) => [item.node.id, index]))
     const nodesByDepth = new Map<number, FlattenedNode[]>()
@@ -160,7 +135,7 @@
       const boundedY = Math.min(Math.max(y, 76), stageHeight - 76)
       const bfsIndex = bfsIndexById.get(item.node.id) ?? 0
 
-      if (item.node.parent_id === null) {
+      if (item.depth === 0) {
         return {
           color: item.branchColor,
           delay: 0,
@@ -192,20 +167,55 @@
 
   const lines = computed<FireworkLine[]>(() =>
     props.flattenedTreeNodes.flatMap(item => {
-      if (item.node.parent_id === null) return []
       const node = nodeById.value.get(item.node.id)
-      const parent = nodeById.value.get(item.node.parent_id)
-      if (!node || !parent) return []
+      if (!node) return []
 
-      return [{
-        color: node.color,
-        delay: node.delay + 80,
-        id: `${item.node.parent_id}-${item.node.id}`,
-        x1: parent.x,
-        x2: node.x,
-        y1: parent.y,
-        y2: node.y,
-      }]
+      const result: FireworkLine[] = []
+
+      if (item.node.parent_id !== null) {
+        const parent = nodeById.value.get(item.node.parent_id)
+        if (parent) {
+          result.push({
+            color: node.color,
+            delay: node.delay + 80,
+            id: `${item.node.parent_id}-${item.node.id}`,
+            x1: parent.x,
+            x2: node.x,
+            y1: parent.y,
+            y2: node.y,
+          })
+        }
+      }
+
+      if (item.node.role === 'merge') {
+        const parentA = item.node.merge_parent_a_id ? nodeById.value.get(item.node.merge_parent_a_id) : null
+        const parentB = item.node.merge_parent_b_id ? nodeById.value.get(item.node.merge_parent_b_id) : null
+
+        if (parentA) {
+          result.push({
+            color: node.color,
+            delay: node.delay + 80,
+            id: `merge-a-${item.node.merge_parent_a_id}-${item.node.id}`,
+            x1: parentA.x,
+            x2: node.x,
+            y1: parentA.y,
+            y2: node.y,
+          })
+        }
+        if (parentB) {
+          result.push({
+            color: node.color,
+            delay: node.delay + 80,
+            id: `merge-b-${item.node.merge_parent_b_id}-${item.node.id}`,
+            x1: parentB.x,
+            x2: node.x,
+            y1: parentB.y,
+            y2: node.y,
+          })
+        }
+      }
+
+      return result
     })
   )
 
