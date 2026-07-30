@@ -618,7 +618,7 @@
       }
 
       const childIds = node.children.filter(childId => nodeById.value.has(childId))
-      const usedLanes = new Set([...currentOpenLanes.keys(), lane])
+      const usedLanes = new Set([...currentOpenLanes.keys(), lane, ...nodeMergeLanes])
       const childLanes = childIds.map((_, index) =>
         index === 0 ? lane : nextAvailableLane(usedLanes, lane)
       )
