@@ -676,6 +676,10 @@
     !isLoadingContext.value
   )
 
+  // The backend gives the provider up to 60s to answer, so the client has to wait
+  // longer than that or it aborts a request that is still on its way.
+  const chatRequestTimeoutMs = 90000
+
   const apiFetch = async (
     input: RequestInfo | URL,
     init: RequestInit = {},
@@ -1092,7 +1096,7 @@
           parent_id: currentNodeId.value,
           message: content,
         }),
-      })
+      }, chatRequestTimeoutMs)
       const data = await assertOk<ChatResponsePayload>(response, 'The backend could not complete the chat request.')
       const nextNodeId = data.current_node_id ?? data.currentNodeId ?? data.assistant?.id ?? data.node?.id ?? null
 
@@ -1112,7 +1116,10 @@
       }
     } catch (error) {
       messages.value = previousMessages
-      errorMessage.value = error instanceof Error ? error.message : 'Unexpected chat error.'
+      errorMessage.value = requestErrorMessage(
+        error,
+        'The model took too long to respond. It may still be loading, so try again in a moment.',
+      )
     } finally {
       isSending.value = false
       await scrollToBottom()
@@ -1164,7 +1171,10 @@
         messages.value = [] // Clear chat panel for merge node
       }
     } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : 'Unexpected merge error.'
+      errorMessage.value = requestErrorMessage(
+        error,
+        'Merging the branches timed out. Check the backend merge API.',
+      )
     }
   }
 
