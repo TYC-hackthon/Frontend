@@ -5,7 +5,17 @@
     </div>
   </div>
 
-  <Layout v-else-if="currentUser" title="Git-like AI Chat" :show-account="false">
+  <div v-else-if="!currentUser" class="chat-page auth-page">
+    <AuthPanel
+      :error-message="authErrorMessage"
+      :is-submitting="isAuthSubmitting"
+      :needs-setup="needsSetup"
+      @login="login"
+      @setup="setupAdmin"
+    />
+  </div>
+
+  <Layout v-else title="Git-like AI Chat" :show-account="false">
     <template #topbar>
       <ModelSettingsPanel
         v-model:ollama-base-url="ollamaBaseUrl"
@@ -21,6 +31,7 @@
         :providers="providers"
         variant="nav"
         @detect-models="detectOllamaModels"
+        @logout="logout"
         @open-admin="openAdminPanel"
       />
     </template>
@@ -250,6 +261,7 @@
 <script lang="ts" setup>
   import { computed, onMounted, ref, watch } from 'vue'
   import AdminPanel from '@/components/chat/AdminPanel.vue'
+  import AuthPanel from '@/components/chat/AuthPanel.vue'
   import BranchPanel from '@/components/chat/BranchPanel.vue'
   import ClearDatabaseDialog from '@/components/chat/ClearDatabaseDialog.vue'
   import ConversationPanel from '@/components/chat/ConversationPanel.vue'
@@ -292,7 +304,10 @@
   ]
 
   const currentUser = ref<AuthUser | null>(null)
+  const needsSetup = ref(false)
   const isCheckingSession = ref(true)
+  const isAuthSubmitting = ref(false)
+  const authErrorMessage = ref('')
   const isAdminPanelOpen = ref(false)
   const adminUsers = ref<AuthUser[]>([])
   const isLoadingAdminUsers = ref(false)
@@ -944,6 +959,7 @@
   }
 
   const applyAuthPayload = (data: AuthStatusPayload) => {
+    needsSetup.value = data.needs_setup
     currentUser.value = data.authenticated ? data.user : null
     if (!currentUser.value) {
       resetWorkspaceState()
@@ -961,6 +977,7 @@
 
   const loadSession = async () => {
     isCheckingSession.value = true
+    authErrorMessage.value = ''
 
     try {
       const response = await apiFetch('/api/auth/status')
@@ -970,11 +987,54 @@
       if (currentUser.value) {
         await loadWorkspace()
       }
-    } catch {
+    } catch (error) {
       currentUser.value = null
+      authErrorMessage.value = error instanceof Error ? error.message : 'Unable to read session.'
       resetWorkspaceState()
     } finally {
       isCheckingSession.value = false
+    }
+  }
+
+  const completeAuth = async (endpoint: string, payload: { username: string; password: string }) => {
+    isAuthSubmitting.value = true
+    authErrorMessage.value = ''
+
+    try {
+      const response = await apiFetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await assertOk<AuthStatusPayload>(response, 'Authentication failed.')
+      applyAuthPayload(data)
+      resetWorkspaceState()
+
+      if (currentUser.value) {
+        await loadWorkspace()
+      }
+    } catch (error) {
+      authErrorMessage.value = error instanceof Error ? error.message : 'Authentication failed.'
+    } finally {
+      isAuthSubmitting.value = false
+    }
+  }
+
+  const login = async (payload: { username: string; password: string }) => {
+    await completeAuth('/api/auth/login', payload)
+  }
+
+  const setupAdmin = async (payload: { username: string; password: string }) => {
+    await completeAuth('/api/auth/setup', payload)
+  }
+
+  const logout = async () => {
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' })
+    } finally {
+      currentUser.value = null
+      needsSetup.value = false
+      resetWorkspaceState()
     }
   }
 
