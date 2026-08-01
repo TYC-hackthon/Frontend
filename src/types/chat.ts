@@ -62,6 +62,17 @@ export type MessageNode = {
   children: number[]
 }
 
+export type BranchInfo = {
+  node_id: number
+  summary: string | null
+  tags: string[]
+  description: string | null
+  has_embedding: boolean
+  embedding_model: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
 export type ContextMessage = {
   role: ConversationRole
   content: string
@@ -126,4 +137,5 @@ export type FlattenedNode = {
   lane: number
   mergeLanes: number[]
   parentLane: number | null
+  branchInfo?: BranchInfo | null
 }

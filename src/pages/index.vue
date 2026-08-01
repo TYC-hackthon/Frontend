@@ -195,23 +195,29 @@
             :is-loading-context="isLoadingContext"
             :is-loading-tree="isLoadingTree"
             :is-new-root-draft-active="isNewRootDraftActive"
-            :show-header-actions="false"
-            :show-root-switcher="false"
-            :show-summary="false"
-            :tree-root-options="treeRootOptions"
+            :is-merge-mode="isMergeMode"
+            :merge-source-node-id="mergeSourceNodeId"
+            :is-compare-mode="isCompareMode"
+            :compare-source-node-id="compareSourceNodeId"
+            :show-firework-action="treeNodes.length > 0"
+            :show-header-actions="true"
+            :show-root-switcher="true"
+            :show-summary="true"
             :tree-nodes="treeNodes"
+            :tree-root-options="treeRootOptions"
             :tree-roots="treeRoots"
             @burst-graph="isFireworkOverlayOpen = true"
-            @clear-requested="isClearDialogOpen = true"
+            @clear-requested="clearDatabase"
             @refresh-tree="loadTree"
             @select-node="selectNode"
             @select-root-tree="selectRootTree"
             @start-root="startRootConversation"
-            :is-merge-mode="isMergeMode"
-            :merge-source-node-id="mergeSourceNodeId"
             @merge-start="startMergeMode"
             @merge-cancelled="cancelMergeMode"
             @merge-target="selectMergeTarget"
+            @compare-start="startCompareMode"
+            @compare-cancelled="cancelCompareMode"
+            @compare-target="selectCompareTarget"
           />
         </div>
 
@@ -259,7 +265,7 @@
 </template>
 
 <script lang="ts" setup>
-  import { computed, onMounted, ref, watch } from 'vue'
+  import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
   import AdminPanel from '@/components/chat/AdminPanel.vue'
   import AuthPanel from '@/components/chat/AuthPanel.vue'
   import BranchPanel from '@/components/chat/BranchPanel.vue'
@@ -284,6 +290,7 @@
     RootTreeOption,
     TreePayload,
     UpdateUserPayload,
+    BranchInfo,
   } from '@/types/chat'
 
   const fallbackProviders: Provider[] = [
@@ -329,6 +336,7 @@
   const messages = ref<ChatMessage[]>([])
   const treeNodes = ref<MessageNode[]>([])
   const treeRoots = ref<number[]>([])
+  const branchInfos = ref<BranchInfo[]>([])
   const currentNodeId = ref<number | null>(null)
   const activeTreeRootId = ref<number | null>(null)
   const isNewRootDraftActive = ref(false)
@@ -346,6 +354,9 @@
   const isMergeMode = ref(false)
   const mergeSourceNodeId = ref<number | null>(null)
   const mergeTargetNodeId = ref<number | null>(null)
+  
+  const isCompareMode = ref(false)
+  const compareSourceNodeId = ref<number | null>(null)
 
   let nextLocalMessageId = 1
 
@@ -428,6 +439,15 @@
     if (!normalized) return `Node #${node.id}`
     return normalized.length > 42 ? `${normalized.slice(0, 42)}...` : normalized
   }
+
+
+  const branchInfoByNodeId = computed(() => {
+    const map = new Map<number, BranchInfo>()
+    for (const info of branchInfos.value) {
+      map.set(info.node_id, info)
+    }
+    return map
+  })
 
   const treeRootOptions = computed<RootTreeOption[]>(() =>
     treeRoots.value.flatMap((rootId, index) => {
@@ -675,6 +695,7 @@
 
       return {
         ...row,
+        branchInfo: branchInfoByNodeId.value.get(row.node.id) || null,
         graphColumnCount,
         graphLanes: Array.from({ length: graphColumnCount }, (_, index) => {
           const laneStyle = laneStyles.get(index) ?? branchPalette[0]
@@ -813,6 +834,14 @@
       const data = await assertOk<TreePayload>(response, 'Unable to load conversation tree.')
       treeNodes.value = data.nodes.map(normalizeTreeNode)
       treeRoots.value = data.roots
+
+      try {
+        const branchesResponse = await apiFetch('/api/branches')
+        const branchesData = await assertOk<{ branches: BranchInfo[] }>(branchesResponse, 'Unable to load branches.')
+        branchInfos.value = branchesData.branches || []
+      } catch (e) {
+        console.warn('Failed to load branch infos', e)
+      }
 
       if (currentNodeId.value !== null && !nodeById.value.has(currentNodeId.value)) {
         await startRootConversation()
@@ -1250,7 +1279,41 @@
       )
     }
   }
+  const startCompareMode = () => {
+    if (currentNodeId.value === null) return
+    isCompareMode.value = true
+    compareSourceNodeId.value = currentNodeId.value
+  }
 
+  const cancelCompareMode = () => {
+    isCompareMode.value = false
+    compareSourceNodeId.value = null
+  }
+
+  const selectCompareTarget = async (nodeId: number) => {
+    if (compareSourceNodeId.value === null) return
+    if (nodeId === compareSourceNodeId.value) {
+      errorMessage.value = 'Cannot compare a node with itself.'
+      return
+    }
+
+    isCompareMode.value = false
+    errorMessage.value = ''
+
+    try {
+      const response = await apiFetch(`/api/branches/compare?node_a=${compareSourceNodeId.value}&node_b=${nodeId}`)
+      const data = await assertOk<{ similarity: number }>(response, 'Unable to compare branches.')
+      
+      window.alert(`Cosine Similarity between Node #${compareSourceNodeId.value} and Node #${nodeId}:\n\nScore: ${data.similarity}`)
+    } catch (error) {
+      errorMessage.value = requestErrorMessage(
+        error,
+        'Failed to compare branches.',
+      )
+    } finally {
+      compareSourceNodeId.value = null
+    }
+  }
 
   watch(selectedProvider, () => {
     selectedModel.value = modelOptions.value[0] ?? ''
@@ -1259,8 +1322,27 @@
     }
   })
 
+  let branchPollingInterval: number | null = null
+
   onMounted(async () => {
     await loadSession()
+    branchPollingInterval = window.setInterval(async () => {
+      if (document.visibilityState === 'visible' && currentUser.value) {
+        try {
+          const branchesResponse = await apiFetch('/api/branches')
+          const branchesData = await assertOk<{ branches: BranchInfo[] }>(branchesResponse, 'Unable to load branches.')
+          branchInfos.value = branchesData.branches || []
+        } catch (e) {
+          // Ignore polling errors
+        }
+      }
+    }, 3000)
+  })
+
+  onUnmounted(() => {
+    if (branchPollingInterval !== null) {
+      window.clearInterval(branchPollingInterval)
+    }
   })
 </script>
 

@@ -48,6 +48,20 @@
           </template>
         </v-tooltip>
 
+        <v-tooltip text="Compare similarity" location="bottom">
+          <template #activator="{ props: tooltipProps }">
+            <v-btn
+              v-bind="tooltipProps"
+              aria-label="Compare similarity"
+              class="icon-action"
+              :disabled="currentNodeId === null"
+              icon="mdi-compare"
+              variant="flat"
+              @click="emit('compareStart')"
+            />
+          </template>
+        </v-tooltip>
+
         <v-tooltip v-if="showHeaderActions" text="Refresh tree" location="bottom">
           <template #activator="{ props: tooltipProps }">
             <v-btn
@@ -141,25 +155,43 @@
         </v-btn>
       </div>
 
+      <div v-if="isCompareMode" class="merge-banner compare-banner">
+        <span>Select a node to compare with Node #{{ compareSourceNodeId }}</span>
+        <v-btn
+          variant="text"
+          size="small"
+          class="cancel-merge-btn"
+          @click="emit('compareCancelled')"
+        >
+          Cancel
+        </v-btn>
+      </div>
+
       <p v-if="flattenedTreeNodes.length === 0" class="empty-tree">
         No saved nodes
       </p>
 
-      <button
+      <v-tooltip
         v-for="item in flattenedTreeNodes"
         :key="item.node.id"
-        class="branch-node"
-        :class="{
-          'branch-node--active': item.node.id === currentNodeId,
-          'branch-node--assistant': item.node.role === 'assistant',
-          'branch-node--exchange': item.node.role === 'exchange',
-          'branch-node--merge': item.node.role === 'merge',
-        }"
-        :disabled="isLoadingContext"
-        :style="branchNodeStyle(item)"
-        type="button"
-        @click="isMergeMode ? emit('mergeTarget', item.node.id) : emit('selectNode', item.node.id)"
+        location="left"
+        :disabled="!item.branchInfo || (!item.branchInfo.summary && (!item.branchInfo.tags || item.branchInfo.tags.length === 0))"
       >
+        <template #activator="{ props: tooltipProps }">
+          <button
+            v-bind="tooltipProps"
+            class="branch-node"
+            :class="{
+              'branch-node--active': item.node.id === currentNodeId,
+              'branch-node--assistant': item.node.role === 'assistant',
+              'branch-node--exchange': item.node.role === 'exchange',
+              'branch-node--merge': item.node.role === 'merge',
+            }"
+            :disabled="isLoadingContext"
+            :style="branchNodeStyle(item)"
+            type="button"
+            @click="isMergeMode ? emit('mergeTarget', item.node.id) : (isCompareMode ? emit('compareTarget', item.node.id) : emit('selectNode', item.node.id))"
+          >
         <span
           aria-hidden="true"
           class="branch-node__graph"
@@ -202,6 +234,14 @@
           size="16"
         />
       </button>
+      </template>
+      <div v-if="item.branchInfo" class="branch-tooltip-content">
+        <div v-if="item.branchInfo.summary" class="branch-tooltip-summary">{{ item.branchInfo.summary }}</div>
+        <div v-if="item.branchInfo.tags && item.branchInfo.tags.length > 0" class="branch-tooltip-tags">
+          <span v-for="tag in item.branchInfo.tags" :key="tag" class="branch-tooltip-tag">{{ tag }}</span>
+        </div>
+      </div>
+    </v-tooltip>
     </div>
   </aside>
 </template>
@@ -218,6 +258,8 @@
     isLoadingTree: boolean
     isMergeMode?: boolean
     mergeSourceNodeId?: number | null
+    isCompareMode?: boolean
+    compareSourceNodeId?: number | null
     isNewRootDraftActive: boolean
     showFireworkAction?: boolean
     showHeaderActions?: boolean
@@ -233,6 +275,8 @@
     showSummary: true,
     isMergeMode: false,
     mergeSourceNodeId: null,
+    isCompareMode: false,
+    compareSourceNodeId: null,
   })
 
   const emit = defineEmits<{
@@ -245,6 +289,9 @@
     mergeStart: []
     mergeCancelled: []
     mergeTarget: [nodeId: number]
+    compareStart: []
+    compareCancelled: []
+    compareTarget: [nodeId: number]
   }>()
 
   const nodePreview = (node: MessageNode) => {
@@ -574,6 +621,12 @@
     font-weight: 600;
   }
 
+  .compare-banner {
+    background: rgba(168, 85, 247, 0.16);
+    border: 1px solid rgba(168, 85, 247, 0.3);
+    color: #c084fc;
+  }
+
   .cancel-merge-btn {
     color: var(--text-strong, #f8fafc);
     text-transform: none;
@@ -682,6 +735,36 @@
 
   .branch-node--active .branch-node__preview {
     color: var(--text-strong);
+  }
+
+  :global(.branch-tooltip-content) {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px;
+    max-width: 260px;
+  }
+  
+  :global(.branch-tooltip-summary) {
+    font-size: 0.85rem;
+    line-height: 1.3;
+    font-weight: 500;
+  }
+
+  :global(.branch-tooltip-tags) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  :global(.branch-tooltip-tag) {
+    background: rgba(45, 212, 191, 0.15);
+    color: #2dd4bf;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
   }
 
   .branch-node__children {
