@@ -193,9 +193,12 @@
             :flattened-tree-nodes="flattenedTreeNodes"
             :is-clearing-database="isClearingDatabase"
             :is-loading-context="isLoadingContext"
+            :is-loading-recommendation="isLoadingRecommendation"
             :is-loading-tree="isLoadingTree"
             :is-new-root-draft-active="isNewRootDraftActive"
             :is-merge-mode="isMergeMode"
+            :is-recommendation-open="isRecommendationOpen"
+            :merge-recommendation="visibleMergeRecommendation"
             :merge-source-node-id="mergeSourceNodeId"
             :is-compare-mode="isCompareMode"
             :compare-source-node-id="compareSourceNodeId"
@@ -218,6 +221,8 @@
             @compare-start="startCompareMode"
             @compare-cancelled="cancelCompareMode"
             @compare-target="selectCompareTarget"
+            @merge-recommended="mergeWithRecommendation"
+            @dismiss-recommendation="closeMergeRecommendation"
           />
         </div>
 
@@ -291,6 +296,7 @@
     TreePayload,
     UpdateUserPayload,
     BranchInfo,
+    MergeRecommendation,
   } from '@/types/chat'
 
   const fallbackProviders: Provider[] = [
@@ -358,6 +364,14 @@
   const isCompareMode = ref(false)
   const compareSourceNodeId = ref<number | null>(null)
 
+  // Only branches at least this similar to the selected node are worth merging.
+  const mergeRecommendationThreshold = 0.6
+  const mergeRecommendation = ref<MergeRecommendation | null>(null)
+  const recommendationSourceNodeId = ref<number | null>(null)
+  const isRecommendationOpen = ref(false)
+  const isLoadingRecommendation = ref(false)
+  let recommendationRequestId = 0
+
   let nextLocalMessageId = 1
 
   const activeProvider = computed(() =>
@@ -378,6 +392,21 @@
   })
 
   const nodeById = computed(() => new Map(treeNodes.value.map(node => [node.id, node])))
+
+  // Merge nodes hang off merge_parent_*_id instead of parent_id, so they are not
+  // listed in their parents' children and need a reverse index of their own.
+  const mergeChildIdsByNodeId = computed(() => {
+    const map = new Map<number, number[]>()
+
+    for (const node of treeNodes.value) {
+      for (const parentId of [node.merge_parent_a_id, node.merge_parent_b_id]) {
+        if (parentId === null || parentId === undefined) continue
+        map.set(parentId, [...(map.get(parentId) ?? []), node.id])
+      }
+    }
+
+    return map
+  })
 
   const rootIdForNode = (nodeId: number | null) => {
     if (nodeId === null) return null
@@ -1228,15 +1257,19 @@
     }
   }
 
+  // Entering merge mode offers the closest branch as a shortcut while leaving the
+  // tree free for picking the second node by hand.
   const startMergeMode = () => {
     if (currentNodeId.value === null) return
     isMergeMode.value = true
     mergeSourceNodeId.value = currentNodeId.value
+    openMergeRecommendation(currentNodeId.value)
   }
 
   const cancelMergeMode = () => {
     isMergeMode.value = false
     mergeSourceNodeId.value = null
+    closeMergeRecommendation()
   }
 
   const selectMergeTarget = async (nodeId: number) => {
@@ -1247,8 +1280,9 @@
     }
     
     isMergeMode.value = false
+    closeMergeRecommendation()
     errorMessage.value = ''
-    
+
     try {
       const response = await apiFetch('/api/merge', {
         method: 'POST',
@@ -1279,8 +1313,108 @@
       )
     }
   }
+  // Ancestors and descendants already share their whole context with the node, so
+  // merging with them would only duplicate it.
+  const lineageNodeIds = (nodeId: number) => {
+    const lineage = new Set<number>()
+
+    const collect = (childrenOf: (node: MessageNode) => (number | null | undefined)[]) => {
+      const pending = [nodeId]
+
+      while (pending.length > 0) {
+        const id = pending.pop()!
+        if (lineage.has(id)) continue
+        lineage.add(id)
+
+        const node = nodeById.value.get(id)
+        if (!node) continue
+
+        for (const relatedId of childrenOf(node)) {
+          if (relatedId !== null && relatedId !== undefined) pending.push(relatedId)
+        }
+      }
+    }
+
+    collect(node => [node.parent_id, node.merge_parent_a_id, node.merge_parent_b_id])
+    collect(node => [...node.children, ...(mergeChildIdsByNodeId.value.get(node.id) ?? [])])
+
+    return lineage
+  }
+
+  const loadMergeRecommendation = async (nodeId: number | null, silent = false) => {
+    const requestId = ++recommendationRequestId
+
+    if (nodeId === null) {
+      mergeRecommendation.value = null
+      recommendationSourceNodeId.value = null
+      isLoadingRecommendation.value = false
+      return
+    }
+
+    if (!silent) isLoadingRecommendation.value = true
+
+    try {
+      const response = await apiFetch(
+        `/api/branches/${nodeId}/recommendations?threshold=${mergeRecommendationThreshold}&limit=8`,
+      )
+      const data = await assertOk<{ candidates: MergeRecommendation[] }>(
+        response,
+        'Unable to load merge recommendations.',
+      )
+      if (requestId !== recommendationRequestId) return
+
+      const lineage = lineageNodeIds(nodeId)
+      const best = (data.candidates ?? [])
+        .filter(candidate => !lineage.has(candidate.node_id) && nodeById.value.has(candidate.node_id))
+        .sort((left, right) => right.similarity - left.similarity)[0] ?? null
+
+      mergeRecommendation.value = best
+      recommendationSourceNodeId.value = nodeId
+    } catch {
+      // A missing recommendation is not worth an error banner; the node simply has
+      // no embedding yet, or nothing similar enough to merge with.
+      if (requestId !== recommendationRequestId) return
+      mergeRecommendation.value = null
+      recommendationSourceNodeId.value = nodeId
+    } finally {
+      if (requestId === recommendationRequestId) isLoadingRecommendation.value = false
+    }
+  }
+
+  const visibleMergeRecommendation = computed(() => {
+    const recommendation = mergeRecommendation.value
+    if (!recommendation || currentNodeId.value === null) return null
+    if (recommendationSourceNodeId.value !== currentNodeId.value) return null
+    return recommendation
+  })
+
+  const closeMergeRecommendation = () => {
+    isRecommendationOpen.value = false
+    mergeRecommendation.value = null
+    recommendationSourceNodeId.value = null
+    isLoadingRecommendation.value = false
+    recommendationRequestId += 1
+  }
+
+  const openMergeRecommendation = (nodeId: number) => {
+    isRecommendationOpen.value = true
+    loadMergeRecommendation(nodeId)
+  }
+
+  // The suggestion is a shortcut for the node the user would otherwise click, so it
+  // reuses whatever merge source is already armed.
+  const mergeWithRecommendation = async (nodeId: number) => {
+    if (mergeSourceNodeId.value === null) {
+      if (currentNodeId.value === null) return
+      mergeSourceNodeId.value = currentNodeId.value
+    }
+
+    await selectMergeTarget(nodeId)
+  }
+
   const startCompareMode = () => {
     if (currentNodeId.value === null) return
+    closeMergeRecommendation()
     isCompareMode.value = true
     compareSourceNodeId.value = currentNodeId.value
   }
@@ -1314,6 +1448,27 @@
       compareSourceNodeId.value = null
     }
   }
+
+  // Sending a message, switching root or merging all move the node without a click,
+  // and none of them should leave a stale suggestion floating around.
+  watch(currentNodeId, () => {
+    closeMergeRecommendation()
+  })
+
+  // Embeddings are computed in the background, so both the selected node and its
+  // candidates can become comparable after the tree has already been rendered.
+  const embeddedNodeSignature = computed(() =>
+    branchInfos.value
+      .filter(info => info.has_embedding)
+      .map(info => info.node_id)
+      .sort((left, right) => left - right)
+      .join(',')
+  )
+
+  watch(embeddedNodeSignature, () => {
+    if (!isRecommendationOpen.value || currentNodeId.value === null) return
+    loadMergeRecommendation(currentNodeId.value, true)
+  })
 
   watch(selectedProvider, () => {
     selectedModel.value = modelOptions.value[0] ?? ''

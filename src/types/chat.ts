@@ -73,6 +73,15 @@ export type BranchInfo = {
   updated_at: string | null
 }
 
+export type MergeRecommendation = {
+  node_id: number
+  similarity: number
+  summary: string | null
+  tags: string[]
+  description: string | null
+  is_leaf?: boolean
+}
+
 export type ContextMessage = {
   role: ConversationRole
   content: string

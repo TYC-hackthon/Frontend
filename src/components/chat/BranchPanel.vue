@@ -243,20 +243,100 @@
       </div>
     </v-tooltip>
     </div>
+
+    <Teleport to="body">
+      <!-- The layer carries the drag offset so the pop transition keeps its own transform. -->
+      <div ref="suggestionRef" class="merge-suggestion-layer" :style="suggestionStyle">
+        <Transition name="suggestion-pop">
+          <section
+            v-if="isRecommendationOpen && !isCompareMode"
+            class="merge-suggestion"
+            :class="{ 'merge-suggestion--dragging': isDragging }"
+          >
+            <header class="merge-suggestion__head" @pointerdown="startDrag">
+              <p class="eyebrow">
+                <v-icon icon="mdi-drag-horizontal-variant" size="14" />
+                Suggested merge
+              </p>
+              <button
+                aria-label="Dismiss suggestion"
+                class="merge-suggestion__dismiss"
+                type="button"
+                @click="emit('dismissRecommendation')"
+              >
+                <v-icon icon="mdi-close" size="14" />
+              </button>
+            </header>
+
+            <div v-if="!mergeRecommendation" class="merge-suggestion__status">
+              <v-progress-circular v-if="isLoadingRecommendation" indeterminate size="14" width="2" />
+              <span>{{ isLoadingRecommendation ? 'Looking for the closest branch...' : 'No similar branch to merge with.' }}</span>
+            </div>
+
+            <template v-else>
+              <div class="merge-suggestion__headline">
+                <span class="merge-suggestion__node">Node #{{ mergeRecommendation.node_id }}</span>
+                <span class="merge-suggestion__score">{{ recommendationScoreLabel }}</span>
+              </div>
+
+              <div aria-hidden="true" class="merge-suggestion__meter">
+                <span :style="recommendationMeterStyle" />
+              </div>
+
+              <p class="merge-suggestion__summary">{{ recommendationPreview }}</p>
+
+              <div v-if="mergeRecommendation.tags && mergeRecommendation.tags.length > 0" class="merge-suggestion__tags">
+                <span v-for="tag in mergeRecommendation.tags" :key="tag" class="merge-suggestion__tag">{{ tag }}</span>
+              </div>
+
+              <div class="merge-suggestion__actions">
+                <v-btn
+                  class="merge-suggestion__button"
+                  :disabled="isLoadingContext"
+                  size="small"
+                  variant="text"
+                  @click="emit('selectNode', mergeRecommendation.node_id)"
+                >
+                  View
+                </v-btn>
+                <v-btn
+                  class="merge-suggestion__button merge-suggestion__button--primary"
+                  :disabled="isLoadingContext || currentNodeId === null"
+                  prepend-icon="mdi-source-merge"
+                  size="small"
+                  variant="flat"
+                  @click="emit('mergeRecommended', mergeRecommendation.node_id)"
+                >
+                  Merge
+                </v-btn>
+              </div>
+            </template>
+
+            <p v-if="isMergeMode" class="merge-suggestion__hint">
+              Or pick any node in the tree to merge with Node #{{ mergeSourceNodeId }}.
+            </p>
+          </section>
+        </Transition>
+      </div>
+    </Teleport>
   </aside>
 </template>
 
 <script setup lang="ts">
-  import type { FlattenedNode, GraphLane, MessageNode, RootTreeOption } from '@/types/chat'
+  import { computed, onBeforeUnmount, ref } from 'vue'
+  import type { FlattenedNode, GraphLane, MergeRecommendation, MessageNode, RootTreeOption } from '@/types/chat'
 
-  withDefaults(defineProps<{
+  const props = withDefaults(defineProps<{
     currentNodeId: number | null
     currentNodeLabel: string
     flattenedTreeNodes: FlattenedNode[]
     isClearingDatabase: boolean
     isLoadingContext: boolean
+    isLoadingRecommendation?: boolean
     isLoadingTree: boolean
     isMergeMode?: boolean
+    isRecommendationOpen?: boolean
+    mergeRecommendation?: MergeRecommendation | null
     mergeSourceNodeId?: number | null
     isCompareMode?: boolean
     compareSourceNodeId?: number | null
@@ -274,6 +354,9 @@
     showRootSwitcher: true,
     showSummary: true,
     isMergeMode: false,
+    isLoadingRecommendation: false,
+    isRecommendationOpen: false,
+    mergeRecommendation: null,
     mergeSourceNodeId: null,
     isCompareMode: false,
     compareSourceNodeId: null,
@@ -292,6 +375,8 @@
     compareStart: []
     compareCancelled: []
     compareTarget: [nodeId: number]
+    mergeRecommended: [nodeId: number]
+    dismissRecommendation: []
   }>()
 
   const nodePreview = (node: MessageNode) => {
@@ -303,6 +388,98 @@
     if (!normalized) return '(empty)'
     return normalized.length > 72 ? `${normalized.slice(0, 72)}...` : normalized
   }
+
+  // The suggestion starts docked to the bottom right and is then moved around by
+  // dragging its header. The offset is kept relative to that resting spot, so the
+  // card stays put across open/close cycles.
+  const suggestionRef = ref<HTMLElement | null>(null)
+  const dragOffset = ref({ x: 0, y: 0 })
+  const isDragging = ref(false)
+  let dragStart = { pointerX: 0, pointerY: 0, offsetX: 0, offsetY: 0 }
+
+  const suggestionStyle = computed(() => ({
+    transform: `translate(${dragOffset.value.x}px, ${dragOffset.value.y}px)`,
+  }))
+
+  const clampOffset = (x: number, y: number) => {
+    const element = suggestionRef.value
+    if (!element) return { x, y }
+
+    const rect = element.getBoundingClientRect()
+    const restingLeft = rect.left - dragOffset.value.x
+    const restingTop = rect.top - dragOffset.value.y
+    const margin = 8
+
+    return {
+      x: Math.min(Math.max(x, margin - restingLeft), window.innerWidth - margin - rect.width - restingLeft),
+      y: Math.min(Math.max(y, margin - restingTop), window.innerHeight - margin - rect.height - restingTop),
+    }
+  }
+
+  const onDrag = (event: PointerEvent) => {
+    dragOffset.value = clampOffset(
+      dragStart.offsetX + event.clientX - dragStart.pointerX,
+      dragStart.offsetY + event.clientY - dragStart.pointerY,
+    )
+  }
+
+  const stopDrag = () => {
+    isDragging.value = false
+    window.removeEventListener('pointermove', onDrag)
+    window.removeEventListener('pointerup', stopDrag)
+    window.removeEventListener('pointercancel', stopDrag)
+  }
+
+  const startDrag = (event: PointerEvent) => {
+    // Let the dismiss button keep its own click.
+    if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+
+    event.preventDefault()
+    isDragging.value = true
+    dragStart = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      offsetX: dragOffset.value.x,
+      offsetY: dragOffset.value.y,
+    }
+
+    window.addEventListener('pointermove', onDrag)
+    window.addEventListener('pointerup', stopDrag)
+    window.addEventListener('pointercancel', stopDrag)
+  }
+
+  // A smaller viewport can leave the card parked off-screen. Only meaningful while
+  // it is open, since the layer collapses to zero height otherwise.
+  const keepSuggestionInView = () => {
+    if (!props.isRecommendationOpen) return
+    dragOffset.value = clampOffset(dragOffset.value.x, dragOffset.value.y)
+  }
+
+  window.addEventListener('resize', keepSuggestionInView)
+
+  onBeforeUnmount(() => {
+    stopDrag()
+    window.removeEventListener('resize', keepSuggestionInView)
+  })
+
+  const recommendationScoreLabel = computed(() => {
+    const recommendation = props.mergeRecommendation
+    if (!recommendation) return ''
+    return `${Math.round(recommendation.similarity * 100)}% match`
+  })
+
+  const recommendationMeterStyle = computed(() => {
+    const similarity = props.mergeRecommendation?.similarity ?? 0
+    return { width: `${Math.min(100, Math.max(4, Math.round(similarity * 100)))}%` }
+  })
+
+  const recommendationPreview = computed(() => {
+    const recommendation = props.mergeRecommendation
+    if (!recommendation) return ''
+    if (recommendation.summary) return recommendation.summary
+    const item = props.flattenedTreeNodes.find(entry => entry.node.id === recommendation.node_id)
+    return item ? nodePreview(item.node) : 'No summary yet'
+  })
 
   const nodeIcon = (node: MessageNode) => {
     if (node.role === 'merge') return 'mdi-source-merge'
@@ -391,6 +568,7 @@
     min-height: 0;
     overflow: hidden;
     padding: 18px;
+    position: relative;
   }
 
   .panel-header {
@@ -581,6 +759,191 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Teleported to body and fixed, so it floats free of the panel's clipping and can
+     be dragged anywhere on screen. */
+  .merge-suggestion-layer {
+    bottom: 24px;
+    pointer-events: none;
+    position: fixed;
+    right: 24px;
+    width: min(320px, calc(100vw - 48px));
+    z-index: 1200;
+  }
+
+  .merge-suggestion {
+    /* Teleported out of .chat-page, so the palette has to travel with the card. */
+    --text-strong: #f8fafc;
+    --text-muted: #cbd5e1;
+    --text-subtle: #94a3b8;
+    backdrop-filter: blur(12px);
+    background:
+      linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(45, 212, 191, 0.12)),
+      rgba(15, 23, 42, 0.94);
+    border: 1px solid rgba(168, 85, 247, 0.42);
+    border-radius: 8px;
+    box-shadow: 0 18px 40px rgba(2, 6, 23, 0.55);
+    color: var(--text-strong);
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    pointer-events: auto;
+  }
+
+  .merge-suggestion--dragging {
+    box-shadow: 0 24px 56px rgba(2, 6, 23, 0.68);
+    user-select: none;
+  }
+
+  .suggestion-pop-enter-active,
+  .suggestion-pop-leave-active {
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+
+  .suggestion-pop-enter-from,
+  .suggestion-pop-leave-to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+
+  .merge-suggestion__status {
+    align-items: center;
+    color: var(--text-muted);
+    display: flex;
+    font-size: 0.78rem;
+    font-weight: 800;
+    gap: 8px;
+  }
+
+  .merge-suggestion__head {
+    align-items: center;
+    cursor: grab;
+    display: flex;
+    justify-content: space-between;
+    margin: -12px -12px 0;
+    padding: 10px 12px 6px;
+    touch-action: none;
+  }
+
+  .merge-suggestion--dragging .merge-suggestion__head {
+    cursor: grabbing;
+  }
+
+  .merge-suggestion__head .eyebrow {
+    align-items: center;
+    color: #c084fc;
+    display: flex;
+    gap: 5px;
+    margin: 0;
+  }
+
+  .merge-suggestion__dismiss {
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-subtle);
+    cursor: pointer;
+    display: grid;
+    height: 20px;
+    place-items: center;
+    width: 20px;
+  }
+
+  .merge-suggestion__dismiss:hover {
+    background: rgba(148, 163, 184, 0.16);
+    color: var(--text-strong);
+  }
+
+  .merge-suggestion__headline {
+    align-items: baseline;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+  }
+
+  .merge-suggestion__node {
+    color: var(--text-strong);
+    font-size: 0.88rem;
+    font-weight: 900;
+  }
+
+  .merge-suggestion__score {
+    color: #c084fc;
+    font-size: 0.78rem;
+    font-weight: 900;
+  }
+
+  .merge-suggestion__meter {
+    background: rgba(148, 163, 184, 0.2);
+    border-radius: 999px;
+    height: 4px;
+    overflow: hidden;
+  }
+
+  .merge-suggestion__meter span {
+    background: linear-gradient(90deg, #a855f7, #2dd4bf);
+    border-radius: 999px;
+    display: block;
+    height: 100%;
+  }
+
+  .merge-suggestion__summary {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    line-height: 1.3;
+    margin: 0;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .merge-suggestion__hint {
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
+    color: var(--text-subtle);
+    font-size: 0.72rem;
+    line-height: 1.3;
+    margin: 0;
+    padding-top: 8px;
+  }
+
+  .merge-suggestion__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .merge-suggestion__tag {
+    background: rgba(168, 85, 247, 0.16);
+    border-radius: 4px;
+    color: #c084fc;
+    font-size: 0.68rem;
+    font-weight: 800;
+    padding: 2px 6px;
+    text-transform: uppercase;
+  }
+
+  .merge-suggestion__actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .merge-suggestion__button {
+    color: var(--text-strong);
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .merge-suggestion__button--primary {
+    background: rgba(168, 85, 247, 0.28);
+    border: 1px solid rgba(168, 85, 247, 0.44);
+  }
+
+  .merge-suggestion__button--primary:hover {
+    background: rgba(168, 85, 247, 0.4);
   }
 
   .branch-tree {
@@ -931,6 +1294,11 @@
   @media (prefers-reduced-motion: reduce) {
     .branch-node--active .branch-graph__dot {
       animation: none;
+    }
+
+    .suggestion-pop-enter-active,
+    .suggestion-pop-leave-active {
+      transition: none;
     }
   }
 </style>
