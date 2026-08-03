@@ -1,7 +1,7 @@
 <template>
   <aside class="workspace-panel branch-panel">
     <header class="panel-header branch-header">
-      <div>
+      <div class="branch-header-title">
         <p class="eyebrow">Branch</p>
         <h2>{{ currentNodeLabel }}</h2>
       </div>
@@ -35,18 +35,6 @@
           </template>
         </v-tooltip>
 
-        <v-tooltip v-if="showHeaderActions" text="New root" location="bottom">
-          <template #activator="{ props: tooltipProps }">
-            <v-btn
-              v-bind="tooltipProps"
-              aria-label="New root"
-              class="icon-action"
-              icon="mdi-source-branch-plus"
-              variant="flat"
-              @click="emit('startRoot')"
-            />
-          </template>
-        </v-tooltip>
 
         <v-tooltip text="Compare similarity" location="bottom">
           <template #activator="{ props: tooltipProps }">
@@ -77,20 +65,7 @@
           </template>
         </v-tooltip>
 
-        <v-tooltip v-if="showHeaderActions" text="Clear history" location="bottom">
-          <template #activator="{ props: tooltipProps }">
-            <v-btn
-              v-bind="tooltipProps"
-              aria-label="Clear history"
-              class="icon-action danger-action"
-              :disabled="isClearingDatabase || treeNodes.length === 0"
-              icon="mdi-trash-can-outline"
-              :loading="isClearingDatabase"
-              variant="flat"
-              @click="emit('clearRequested')"
-            />
-          </template>
-        </v-tooltip>
+
       </div>
     </header>
 
@@ -105,42 +80,7 @@
       </div>
     </div>
 
-    <div
-      v-if="showRootSwitcher && (treeRootOptions.length > 0 || isNewRootDraftActive)"
-      aria-label="Root trees"
-      class="root-switcher"
-      role="tablist"
-    >
-      <button
-        aria-label="New root"
-        :aria-selected="isNewRootDraftActive"
-        class="root-switcher__button root-switcher__button--new"
-        :class="{ 'root-switcher__button--active': isNewRootDraftActive }"
-        :disabled="isLoadingContext"
-        role="tab"
-        type="button"
-        @click="emit('startRoot')"
-      >
-        <v-icon icon="mdi-plus" size="15" />
-        <span>New</span>
-      </button>
 
-      <button
-        v-for="option in treeRootOptions"
-        :key="option.id"
-        :aria-label="`Open ${option.label}`"
-        :aria-selected="option.isCurrent"
-        class="root-switcher__button"
-        :class="{ 'root-switcher__button--active': option.isCurrent }"
-        :disabled="isLoadingContext"
-        role="tab"
-        type="button"
-        @click="emit('selectRootTree', option.id)"
-      >
-        <span class="root-switcher__label">{{ option.label }}</span>
-        <span class="root-switcher__preview">{{ option.preview }}</span>
-      </button>
-    </div>
 
     <div class="branch-tree" :class="{ 'branch-tree--loading': isLoadingTree }">
       <div v-if="isMergeMode" class="merge-banner">
@@ -582,7 +522,15 @@
     background: linear-gradient(90deg, rgba(129, 140, 248, 0.08), transparent 50%);
     border-bottom: 1px solid var(--border-soft);
     margin: -2px 0 0;
-    padding: 0 50px 14px 0;
+    padding: 0 0 14px 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .branch-header-title {
+    min-width: 0;
+    flex: 1 1 auto;
   }
 
   .branch-tools {
@@ -590,6 +538,8 @@
     display: flex;
     flex: 0 0 auto;
     gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
   .eyebrow {
@@ -605,9 +555,11 @@
     color: var(--text-strong);
     font-size: 1.05rem;
     font-weight: 800;
-    letter-spacing: 0;
     line-height: 1.15;
     margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .icon-action {
