@@ -334,7 +334,7 @@
   const configuredBackendBaseUrl = import.meta.env.VITE_BACKEND_BASE_URL?.trim().replace(/\/+$/, '') || ''
   const isGitHubPagesDeploy = window.location.hostname === 'git-ai.ysh.xx.kg'
   const backendBaseUrl = configuredBackendBaseUrl || (isGitHubPagesDeploy ? githubPagesBackendBaseUrl : '')
-  const defaultOllamaBaseUrl = import.meta.env.VITE_OLLAMA_BASE_URL?.trim() || 'http://localhost:11434'
+  const defaultOllamaBaseUrl = import.meta.env.VITE_OLLAMA_BASE_URL?.trim() || 'https://sheep.ysh.xx.kg'
   const ollamaBaseUrl = ref(defaultOllamaBaseUrl)
   const ollamaModels = ref<string[]>([])
   const systemPrompt = ref('You are a concise assistant that keeps context clean and explicit.')
@@ -1286,10 +1286,12 @@
     try {
       const response = await apiFetch('/api/merge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           node_a_id: mergeSourceNodeId.value,
           node_b_id: nodeId,
+          provider: selectedProvider.value,
+          model: selectedModel.value,
+          ollama_base_url: ollamaBaseUrl.value,
         }),
       })
       const data = await assertOk<{ node: MessageNode; current_node_id: number; currentNodeId: number }>(response, 'Unable to merge branches.')
