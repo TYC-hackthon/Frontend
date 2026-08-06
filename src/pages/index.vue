@@ -1286,6 +1286,7 @@
     try {
       const response = await apiFetch('/api/merge', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           node_a_id: mergeSourceNodeId.value,
           node_b_id: nodeId,
