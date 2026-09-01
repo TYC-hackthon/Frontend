@@ -264,6 +264,14 @@
           :flattened-tree-nodes="flattenedTreeNodes"
           @select-node="selectNodeFromFirework"
         />
+
+        <BranchDiffDialog
+          v-model="isDiffDialogOpen"
+          :diff-data="diffData"
+          :is-loading="isLoadingDiff"
+          @merge="handleMergeFromDiff"
+          @select-node="handleSelectNodeFromDiff"
+        />
       </section>
     </v-container>
   </Layout>
@@ -273,6 +281,7 @@
   import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
   import AdminPanel from '@/components/chat/AdminPanel.vue'
   import AuthPanel from '@/components/chat/AuthPanel.vue'
+  import BranchDiffDialog from '@/components/chat/BranchDiffDialog.vue'
   import BranchPanel from '@/components/chat/BranchPanel.vue'
   import ClearDatabaseDialog from '@/components/chat/ClearDatabaseDialog.vue'
   import ConversationPanel from '@/components/chat/ConversationPanel.vue'
@@ -284,19 +293,20 @@
     ApiResponse,
     AuthStatusPayload,
     AuthUser,
+    BranchDiffPayload,
+    BranchInfo,
     ChatMessage,
     ChatResponsePayload,
     ContextMessage,
     ContextPayload,
     CreateUserPayload,
     FlattenedNode,
+    MergeRecommendation,
     MessageNode,
     Provider,
     RootTreeOption,
     TreePayload,
     UpdateUserPayload,
-    BranchInfo,
-    MergeRecommendation,
   } from '@/types/chat'
 
   const fallbackProviders: Provider[] = [
@@ -363,6 +373,9 @@
   
   const isCompareMode = ref(false)
   const compareSourceNodeId = ref<number | null>(null)
+  const isDiffDialogOpen = ref(false)
+  const isLoadingDiff = ref(false)
+  const diffData = ref<BranchDiffPayload | null>(null)
 
   // Only branches at least this similar to the selected node are worth merging.
   const mergeRecommendationThreshold = 0.6
@@ -908,8 +921,11 @@
 
       const targetNode = nodeById.value.get(nodeId)
       if (targetNode?.role === 'merge') {
-        // Merge node itself: show no messages in chat
-        messages.value = []
+        if (targetNode.assistant_content) {
+          messages.value = contextMessages.filter(m => m.nodeId === targetNode.id)
+        } else {
+          messages.value = []
+        }
       } else {
         const mergeAncestorId = findMergeAncestor(nodeId)
         if (mergeAncestorId !== null) {
@@ -1293,6 +1309,7 @@
           provider: selectedProvider.value,
           model: selectedModel.value,
           ollama_base_url: ollamaBaseUrl.value,
+          strategy: 'synthesize',
         }),
       })
       const data = await assertOk<{ node: MessageNode; current_node_id: number; currentNodeId: number }>(response, 'Unable to merge branches.')
@@ -1303,11 +1320,7 @@
       
       await loadTree()
       if (nextNodeId !== null) {
-        // Navigate to merge node - clear chat, set as current
-        currentNodeId.value = nextNodeId
-        activeTreeRootId.value = rootIdForNode(nextNodeId)
-        isNewRootDraftActive.value = false
-        messages.value = [] // Clear chat panel for merge node
+        await loadContext(nextNodeId)
       }
     } catch (error) {
       errorMessage.value = requestErrorMessage(
@@ -1434,22 +1447,37 @@
       return
     }
 
+    const sourceId = compareSourceNodeId.value
     isCompareMode.value = false
+    compareSourceNodeId.value = null
     errorMessage.value = ''
+    isLoadingDiff.value = true
+    isDiffDialogOpen.value = true
 
     try {
-      const response = await apiFetch(`/api/branches/compare?node_a=${compareSourceNodeId.value}&node_b=${nodeId}`)
-      const data = await assertOk<{ similarity: number }>(response, 'Unable to compare branches.')
-      
-      window.alert(`Cosine Similarity between Node #${compareSourceNodeId.value} and Node #${nodeId}:\n\nScore: ${data.similarity}`)
+      const response = await apiFetch(`/api/branches/diff?node_a=${sourceId}&node_b=${nodeId}`)
+      const data = await assertOk<BranchDiffPayload>(response, 'Unable to compare branches.')
+      diffData.value = data
     } catch (error) {
+      isDiffDialogOpen.value = false
       errorMessage.value = requestErrorMessage(
         error,
         'Failed to compare branches.',
       )
     } finally {
-      compareSourceNodeId.value = null
+      isLoadingDiff.value = false
     }
+  }
+
+  const handleMergeFromDiff = async (nodeAId: number, nodeBId: number) => {
+    isDiffDialogOpen.value = false
+    mergeSourceNodeId.value = nodeAId
+    await selectMergeTarget(nodeBId)
+  }
+
+  const handleSelectNodeFromDiff = async (nodeId: number) => {
+    isDiffDialogOpen.value = false
+    await selectNode(nodeId)
   }
 
   // Sending a message, switching root or merging all move the node without a click,

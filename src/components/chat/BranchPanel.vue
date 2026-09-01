@@ -80,7 +80,31 @@
       </div>
     </div>
 
-
+    <div v-if="flattenedTreeNodes.length > 0" class="branch-filter">
+      <v-text-field
+        v-model="searchQuery"
+        class="branch-search-input"
+        clearable
+        density="compact"
+        hide-details
+        placeholder="Search nodes or tags..."
+        prepend-inner-icon="mdi-magnify"
+        variant="outlined"
+      />
+      <div v-if="allAvailableTags.length > 0" class="branch-tags-bar">
+        <v-chip
+          v-for="tag in allAvailableTags"
+          :key="tag"
+          class="branch-tag-chip"
+          :color="selectedTag === tag ? 'teal' : undefined"
+          size="x-small"
+          :variant="selectedTag === tag ? 'flat' : 'tonal'"
+          @click="selectedTag = selectedTag === tag ? '' : tag"
+        >
+          #{{ tag }}
+        </v-chip>
+      </div>
+    </div>
 
     <div class="branch-tree" :class="{ 'branch-tree--loading': isLoadingTree }">
       <div v-if="isMergeMode" class="merge-banner">
@@ -126,6 +150,8 @@
               'branch-node--assistant': item.node.role === 'assistant',
               'branch-node--exchange': item.node.role === 'exchange',
               'branch-node--merge': item.node.role === 'merge',
+              'branch-node--matched': isFilterActive && isNodeMatched(item),
+              'branch-node--dimmed': isFilterActive && !isNodeMatched(item),
             }"
             :disabled="isLoadingContext"
             :style="branchNodeStyle(item)"
@@ -327,6 +353,55 @@
     const normalized = compact.replace(/\s+/g, ' ').trim()
     if (!normalized) return '(empty)'
     return normalized.length > 72 ? `${normalized.slice(0, 72)}...` : normalized
+  }
+
+  const searchQuery = ref('')
+  const selectedTag = ref('')
+
+  const isFilterActive = computed(() =>
+    Boolean(searchQuery.value.trim() || selectedTag.value)
+  )
+
+  const allAvailableTags = computed(() => {
+    const tagSet = new Set<string>()
+    for (const item of props.flattenedTreeNodes) {
+      if (item.branchInfo?.tags) {
+        for (const tag of item.branchInfo.tags) {
+          tagSet.add(tag)
+        }
+      }
+    }
+    return Array.from(tagSet).slice(0, 10)
+  })
+
+  const isNodeMatched = (item: FlattenedNode) => {
+    const query = searchQuery.value.trim().toLowerCase()
+    const tag = selectedTag.value.toLowerCase()
+
+    let matchQuery = true
+    if (query) {
+      const content = (item.node.content || '').toLowerCase()
+      const userContent = (item.node.user_content || '').toLowerCase()
+      const asstContent = (item.node.assistant_content || '').toLowerCase()
+      const summary = (item.branchInfo?.summary || '').toLowerCase()
+      const idStr = String(item.node.id)
+
+      matchQuery = (
+        content.includes(query) ||
+        userContent.includes(query) ||
+        asstContent.includes(query) ||
+        summary.includes(query) ||
+        idStr.includes(query)
+      )
+    }
+
+    let matchTag = true
+    if (tag) {
+      const nodeTags = (item.branchInfo?.tags || []).map(t => t.toLowerCase())
+      matchTag = nodeTags.includes(tag)
+    }
+
+    return matchQuery && matchTag
   }
 
   // The suggestion starts docked to the bottom right and is then moved around by
@@ -648,6 +723,41 @@
     font-size: 0.72rem;
     font-weight: 800;
     text-transform: uppercase;
+  }
+
+  .branch-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .branch-search-input :deep(.v-field__input) {
+    font-size: 0.78rem;
+    min-height: 34px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .branch-tags-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-height: 56px;
+    overflow-y: auto;
+  }
+
+  .branch-tag-chip {
+    font-size: 0.68rem;
+    font-weight: 700;
+  }
+
+  .branch-node--matched {
+    border-color: #2dd4bf !important;
+    box-shadow: 0 0 10px rgba(45, 212, 191, 0.45);
+  }
+
+  .branch-node--dimmed {
+    opacity: 0.35;
   }
 
   .root-switcher {

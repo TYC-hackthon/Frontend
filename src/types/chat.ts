@@ -148,3 +148,16 @@ export type FlattenedNode = {
   parentLane: number | null
   branchInfo?: BranchInfo | null
 }
+
+export type BranchDiffPayload = {
+  node_a_id: number
+  node_b_id: number
+  similarity: number | null
+  lca_node: MessageNode | null
+  branch_a_nodes: MessageNode[]
+  branch_b_nodes: MessageNode[]
+  summary_a: string | null
+  summary_b: string | null
+  tags_a: string[]
+  tags_b: string[]
+}
